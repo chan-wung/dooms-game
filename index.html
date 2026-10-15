@@ -15,16 +15,20 @@
   #status { margin-bottom: 12px; font-size: 14px; white-space: pre-wrap; }
   #bar { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; font-size: 13px; flex-wrap: wrap; }
   #bar label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
-  select, button { background: #1a1a1f; color: var(--txt); border: 1px solid #444; padding: 4px 8px; font: inherit; }
+  select, button { background: #1a1a1f; color: var(--txt); border: 1px solid #444; padding: 4px 8px; font: inherit; cursor: pointer; }
+  #stage { width: min(100%, 960px); }
+  #view { display: block; width: 100%; aspect-ratio: 4 / 3; background: #000; border: 1px solid #333;
+          image-rendering: pixelated; cursor: crosshair; }
   #automap { display: block; width: 100%; height: 70vh; background: #000; border: 1px solid #333; cursor: grab; }
   #automap.drag { cursor: grabbing; }
-  .help { margin-top: 8px; font-size: 12px; }
+  #hud { margin-top: 6px; font-size: 12px; min-height: 1.4em; }
+  .help { margin-top: 8px; font-size: 12px; }ㅈ
   .help b { color: var(--accent); font-weight: 400; }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-  <h1>doom-js · Phase 1 — 레벨 파싱 + 오토맵</h1>
+  <h1>doom-js · Phase 2 — BSP 렌더러 (단색)</h1>
   <div id="drop">
     <p>public/wad/DOOM1.WAD 를 찾지 못하면 여기에 WAD 파일을 드롭하거나 선택하세요</p>
     <input type="file" id="file" accept=".wad,.WAD">
@@ -32,15 +36,22 @@
   <div id="status">로딩 중…</div>
   <div id="bar" hidden>
     <label>맵 <select id="mapSel"></select></label>
-    <label><input type="checkbox" id="optFollow" checked> 플레이어 따라가기 (F)</label>
-    <label><input type="checkbox" id="optFlat"> 높이 같은 양면선</label>
-    <label><input type="checkbox" id="optThings"> Things (T)</label>
-    <button id="btnFit">전체 보기 (0)</button>
+    <button id="btnMode">오토맵 (Tab)</button>
+    <span id="mapOpts" hidden>
+      <label><input type="checkbox" id="optFollow" checked> 따라가기 (F)</label>
+      <label><input type="checkbox" id="optFlat"> 높이 같은 양면선</label>
+      <label><input type="checkbox" id="optThings"> Things (T)</label>
+      <button id="btnFit">전체 보기 (0)</button>
+    </span>
   </div>
-  <canvas id="automap" hidden></canvas>
+  <div id="stage" hidden>
+    <canvas id="view"></canvas>
+    <canvas id="automap" hidden></canvas>
+    <div id="hud"></div>
+  </div>
   <p class="help" id="help" hidden>
-    <b>WASD</b> 이동 · <b>←/→</b> 회전 · <b>휠</b> 줌 · <b>드래그</b> 팬 · <b>F</b> 따라가기 · <b>T</b> Things · <b>0</b> 전체 보기 ·
-    선 색: <span style="color:#fc0000">외벽</span> / <span style="color:#bc7840">바닥 단차</span> / <span style="color:#fcfc00">천장 단차</span> / <span style="color:#ff40ff">비밀 플래그</span>
+    <b>WASD</b> 이동 · <b>←/→</b> 회전 · <b>클릭</b> 마우스 시점(Esc 해제) · <b>Tab</b> 오토맵 전환 ·
+    오토맵: <b>휠</b> 줌 · <b>드래그</b> 팬 · <b>F</b> 따라가기 · <b>T</b> Things · <b>0</b> 전체 보기
   </p>
   <script type="module" src="/src/main.js"></script>
 </body>

@@ -1,35 +1,52 @@
 import { Wad } from './wad/wad.js';
 import { loadLevel } from './wad/level.js';
 import { Automap } from './ui/automap.js';
+import { Renderer } from './render/renderer.js';
+import { Screen } from './render/screen.js';
+import { createPlayer, updatePlayer } from './game/player.js';
 
 const $ = (id) => document.getElementById(id);
 const $status = $('status'), $drop = $('drop'), $file = $('file');
-const $canvas = $('automap'), $bar = $('bar'), $help = $('help'), $mapSel = $('mapSel');
-const $follow = $('optFollow'), $flat = $('optFlat'), $things = $('optThings');
+const $bar = $('bar'), $stage = $('stage'), $help = $('help'), $hud = $('hud');
+const $view = $('view'), $canvas = $('automap'), $mapSel = $('mapSel'), $mapOpts = $('mapOpts');
+const $follow = $('optFollow'), $flat = $('optFlat'), $things = $('optThings'), $mode = $('btnMode');
 
 const WAD_URL = '/wad/DOOM1.WAD';
 
-let wad = null;
+let wad = null, level = null, player = null;
+let showAutomap = false;
+let mouseDX = 0;
 const automap = new Automap($canvas);
+const renderer = new Renderer();
+const screen = new Screen($view, renderer.pixels);
 const keys = Object.create(null);
 
-// ---------- 캔버스 크기 (DPR 반영) ----------
-const resize = () => {
+// ---------- 캔버스 크기 (오토맵, DPR 반영) ----------
+const resizeAutomap = () => {
   const dpr = window.devicePixelRatio || 1;
   const w = Math.floor($canvas.clientWidth * dpr), h = Math.floor($canvas.clientHeight * dpr);
   if ($canvas.width !== w || $canvas.height !== h) { $canvas.width = w; $canvas.height = h; }
 };
 
+const setMode = (automapOn) => {
+  showAutomap = automapOn;
+  $view.hidden = automapOn;
+  $canvas.hidden = !automapOn;
+  $mapOpts.hidden = !automapOn;
+  $mode.textContent = automapOn ? '3D 화면 (Tab)' : '오토맵 (Tab)';
+  if (automapOn) { document.exitPointerLock?.(); resizeAutomap(); automap.fit(); }
+};
+
 // ---------- 레벨 선택 ----------
 const openMap = (name) => {
   try {
-    const level = loadLevel(wad, name);
-    automap.setLevel(level);
-    window.level = level; // 콘솔 디버깅용
+    level = loadLevel(wad, name);
+    player = createPlayer(level);
+    automap.setLevel(level, player);
+    window.level = level; window.player = player; // 콘솔 디버깅용
     $status.textContent =
       `${name} — 정점 ${level.vertexes.length} · 선 ${level.linedefs.length} · 섹터 ${level.sectors.length} · ` +
-      `things ${level.things.length} · segs ${level.segs.length} · 서브섹터 ${level.subsectors.length} · 노드 ${level.nodes.length}\n` +
-      `플레이어 시작: (${level.playerStart?.x}, ${level.playerStart?.y}) 각도 ${level.playerStart?.angle}°`;
+      `things ${level.things.length} · segs ${level.segs.length} · 서브섹터 ${level.subsectors.length} · 노드 ${level.nodes.length}`;
   } catch (err) {
     $status.textContent = `${name} 로드 실패: ${err.message}`;
     console.error(err);
@@ -47,9 +64,9 @@ const startWad = (buf, source) => {
   const maps = wad.getMapNames();
   if (!maps.length) { $status.textContent = `${source}: 맵이 없는 WAD입니다.`; return; }
   $drop.hidden = true;
-  $bar.hidden = $canvas.hidden = $help.hidden = false;
+  $bar.hidden = $stage.hidden = $help.hidden = false;
   $mapSel.replaceChildren(...maps.map((m) => new Option(m, m)));
-  resize();
+  setMode(false);
   openMap(maps.includes('E1M1') ? 'E1M1' : maps[0]);
 };
 
@@ -79,7 +96,8 @@ $drop.addEventListener('drop', async (e) => {
 });
 
 // ---------- UI 이벤트 ----------
-$mapSel.addEventListener('change', () => openMap($mapSel.value));
+$mapSel.addEventListener('change', () => { $mapSel.blur(); openMap($mapSel.value); });
+$mode.addEventListener('click', () => { $mode.blur(); setMode(!showAutomap); });
 $follow.addEventListener('change', () => { automap.follow = $follow.checked; });
 $flat.addEventListener('change', () => { automap.showFlat = $flat.checked; });
 $things.addEventListener('change', () => { automap.showThings = $things.checked; });
@@ -92,15 +110,22 @@ const toggle = ($el) => { $el.checked = !$el.checked; $el.dispatchEvent(new Even
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLSelectElement) return; // 맵 선택 중엔 키 입력 무시
   keys[e.code] = true;
-  if (e.code.startsWith('Arrow')) e.preventDefault();
-  if (e.code === 'KeyF') toggle($follow);
-  if (e.code === 'KeyT') toggle($things);
-  if (e.code === 'Digit0' && wad) $('btnFit').click();
+  if (e.code.startsWith('Arrow') || e.code === 'Tab') e.preventDefault();
+  if (e.code === 'Tab' && wad && !e.repeat) setMode(!showAutomap);
+  if (showAutomap) {
+    if (e.code === 'KeyF') toggle($follow);
+    if (e.code === 'KeyT') toggle($things);
+    if (e.code === 'Digit0') $('btnFit').click();
+  }
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 
-// 팬 (드래그) / 줌 (휠)
+// 마우스 시점 (Pointer Lock)
+$view.addEventListener('click', () => { if (document.pointerLockElement !== $view) $view.requestPointerLock(); });
+document.addEventListener('mousemove', (e) => { if (document.pointerLockElement === $view) mouseDX += e.movementX; });
+
+// 오토맵: 팬 (드래그) / 줌 (휠)
 let dragging = false;
 $canvas.addEventListener('pointerdown', (e) => {
   dragging = true; $canvas.classList.add('drag'); $canvas.setPointerCapture(e.pointerId);
@@ -119,14 +144,30 @@ $canvas.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 // ---------- 루프 ----------
-let last = performance.now();
+let last = performance.now(), fps = 0, hudTimer = 0;
 const frame = (now) => {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
-  if (wad && automap.level) {
-    resize();
-    automap.update(dt, keys);
-    automap.draw();
+  fps += (1 / Math.max(dt, 0.001) - fps) * 0.05;
+  if (level) {
+    updatePlayer(player, level, dt, keys, mouseDX);
+    mouseDX = 0;
+    if (showAutomap) {
+      resizeAutomap();
+      automap.tick();
+      automap.draw();
+    } else {
+      renderer.render(level, player);
+      screen.present();
+    }
+    hudTimer -= dt;
+    if (hudTimer <= 0) {
+      hudTimer = 0.25;
+      $hud.textContent =
+        `FPS ${fps.toFixed(0)} · 위치 (${player.x.toFixed(0)}, ${player.y.toFixed(0)}) · ` +
+        `각도 ${(((player.angle * 180) / Math.PI) % 360 + 360) % 360 | 0}° · ` +
+        `바닥 ${player.sector.floorHeight} / 천장 ${player.sector.ceilingHeight} · segs ${renderer.segsDrawn}`;
+    }
   }
   requestAnimationFrame(frame);
 };

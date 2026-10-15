@@ -27,14 +27,16 @@ export class Automap {
     this.showThings = false;
   }
 
-  setLevel(level) {
+  /** player: { x, y, angle(라디안) } — 게임과 공유하는 객체 */
+  setLevel(level, player) {
     this.level = level;
-    this.player = {
-      x: level.playerStart?.x ?? 0,
-      y: level.playerStart?.y ?? 0,
-      angle: ((level.playerStart?.angle ?? 0) * Math.PI) / 180,
-    };
+    this.player = player;
     this.fit();
+  }
+
+  /** 따라가기 모드면 화면 중심을 플레이어에 맞춤 */
+  tick() {
+    if (this.follow) { this.cx = this.player.x; this.cy = this.player.y; }
   }
 
   /** 맵 전체가 화면에 들어오도록 */
@@ -68,23 +70,6 @@ export class Automap {
       x: (px - this.canvas.width / 2) / this.scale + this.cx,
       y: -(py - this.canvas.height / 2) / this.scale + this.cy,
     };
-  }
-
-  /** 입력에 따라 플레이어 이동 (충돌 없음 — Phase 4에서 추가) */
-  update(dt, keys) {
-    const p = this.player;
-    const turn = 2.4, speed = 400; // rad/s, 맵 유닛/s
-    if (keys.ArrowLeft) p.angle += turn * dt;   // 맵은 y가 위쪽 +, 반시계 = 왼쪽 회전
-    if (keys.ArrowRight) p.angle -= turn * dt;
-    const fx = Math.cos(p.angle), fy = Math.sin(p.angle);
-    let mx = 0, my = 0;
-    if (keys.KeyW || keys.ArrowUp) { mx += fx; my += fy; }
-    if (keys.KeyS || keys.ArrowDown) { mx -= fx; my -= fy; }
-    if (keys.KeyD) { mx += fy; my -= fx; }
-    if (keys.KeyA) { mx -= fy; my += fx; }
-    const len = Math.hypot(mx, my);
-    if (len > 0) { p.x += (mx / len) * speed * dt; p.y += (my / len) * speed * dt; }
-    if (this.follow) { this.cx = p.x; this.cy = p.y; }
   }
 
   lineColor(l) {

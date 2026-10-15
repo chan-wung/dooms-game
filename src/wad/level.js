@@ -127,21 +127,28 @@ export function loadLevel(wad, mapName) {
   d = dv(raw.SEGS);
   const segs = Array.from({ length: count(raw.SEGS, 12, 'SEGS') }, (_, i) => {
     const p = i * 12;
+    const linedef = linedefs[d.getUint16(p + 6, true)];
+    const direction = d.getInt16(p + 8, true);        // 0 = 선과 같은 방향, 1 = 반대
+    const frontSide = direction === 0 ? linedef.right : linedef.left;
+    const backSide = direction === 0 ? linedef.left : linedef.right;
     return {
       v1: vertexes[d.getUint16(p, true)],
       v2: vertexes[d.getUint16(p + 2, true)],
       angle: d.getInt16(p + 4, true),   // BAM (65536 = 360°)
-      linedef: linedefs[d.getUint16(p + 6, true)],
-      direction: d.getInt16(p + 8, true),
+      linedef,
+      direction,
       offset: d.getInt16(p + 10, true),
+      frontSide,
+      frontSector: frontSide.sector,
+      backSector: backSide ? backSide.sector : null,
     };
   });
 
   d = dv(raw.SSECTORS);
-  const subsectors = Array.from({ length: count(raw.SSECTORS, 4, 'SSECTORS') }, (_, i) => ({
-    segCount: d.getUint16(i * 4, true),
-    firstSeg: d.getUint16(i * 4 + 2, true),
-  }));
+  const subsectors = Array.from({ length: count(raw.SSECTORS, 4, 'SSECTORS') }, (_, i) => {
+    const firstSeg = d.getUint16(i * 4 + 2, true);
+    return { segCount: d.getUint16(i * 4, true), firstSeg, sector: segs[firstSeg].frontSector };
+  });
 
   d = dv(raw.NODES);
   const nodes = Array.from({ length: count(raw.NODES, 28, 'NODES') }, (_, i) => {
