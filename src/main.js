@@ -3,6 +3,8 @@ import { loadLevel } from './wad/level.js';
 import { Automap } from './ui/automap.js';
 import { Renderer } from './render/renderer.js';
 import { Screen } from './render/screen.js';
+import { loadPalette } from './gfx/palette.js';
+import { TextureStore } from './gfx/textures.js';
 import { createPlayer, updatePlayer } from './game/player.js';
 
 const $ = (id) => document.getElementById(id);
@@ -17,8 +19,7 @@ let wad = null, level = null, player = null;
 let showAutomap = false;
 let mouseDX = 0;
 const automap = new Automap($canvas);
-const renderer = new Renderer();
-const screen = new Screen($view, renderer.pixels);
+let renderer = null, screen = null; // WAD 로드 후 생성 (팔레트/텍스처 필요)
 const keys = Object.create(null);
 
 // ---------- 캔버스 크기 (오토맵, DPR 반영) ----------
@@ -56,8 +57,14 @@ const openMap = (name) => {
 const startWad = (buf, source) => {
   try {
     wad = new Wad(buf);
+    const gfx = { palette: loadPalette(wad), textures: new TextureStore(wad) };
+    renderer = new Renderer(gfx);
+    screen = new Screen($view, renderer.pixels);
+    window.gfx = gfx;
   } catch (err) {
-    $status.textContent = `WAD 파싱 실패: ${err.message}`;
+    wad = null;
+    $status.textContent = `WAD 로딩 실패: ${err.message}`;
+    console.error(err);
     return;
   }
   window.wad = wad;
