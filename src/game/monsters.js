@@ -1,4 +1,6 @@
 import { sectorAt } from '../render/bsp.js';
+import { GRAVITY, MAXMOVE, STOPSPEED, FRICTION } from './physics.js';
+import { normAngle, spread, splitMove } from './util.js';
 import {
   MELEE_RANGE, MISSILE_RANGE, approxDist, checkSight, aimLineAttack, lineAttack, damageMobj, radiusAttack,
 } from './combat.js';
@@ -12,12 +14,6 @@ const XSPEED = [1, 0.717, 0, -0.717, -1, -0.717, 0, 0.717];  // 8방향 이동 �
 const YSPEED = [0, 0.717, 1, 0.717, 0, -0.717, -1, -0.717];
 const OPPOSITE = [4, 5, 6, 7, 0, 1, 2, 3, DI_NODIR];
 const DIAGS = [3, 1, 5, 7]; // [(dy<0)<<1 + (dx>0)] → NW, NE, SW, SE
-const FRICTION = 0.90625, STOPSPEED = 0.0625, MAXMOVE = 30, GRAVITY = 1;
-
-const TWO_PI = Math.PI * 2;
-const normAngle = (a) => { a %= TWO_PI; return a > Math.PI ? a - TWO_PI : a < -Math.PI ? a + TWO_PI : a; };
-/** 원작의 (P_Random()-P_Random()) << shift 오차를 라디안으로 (shift 20 → 약 ±22°, 21 → ±44°) */
-const spread = (game, shift) => ((game.rnd() - game.rnd()) * TWO_PI) / 2 ** (32 - shift);
 
 /** 이 몬스터의 소리 종류(see/attack/pain/die …) 하나를 낸다 (여러 개면 무작위) */
 const say = (game, m, kind) => {
@@ -275,21 +271,20 @@ function missileBlocked(game, m, x, y) {
 }
 
 function moveMissile(game, m) {
-  let mx = m.momx, my = m.momy;
-  do {
-    let px, py;
-    if (Math.abs(mx) > MAXMOVE / 2 || Math.abs(my) > MAXMOVE / 2) { px = mx / 2; py = my / 2; mx /= 2; my /= 2; }
-    else { px = mx; py = my; mx = my = 0; }
+  let hit = false;
+  splitMove(m.momx, m.momy, MAXMOVE / 2, (px, py) => {
     const nx = m.x + px, ny = m.y + py;
     if (missileBlocked(game, m, nx, ny)) {
       // 하늘이 보이는 천장에 부딪히면 터지지 않고 사라진다
       if (m.ceilz <= m.z + m.height && sectorAt(game.level, nx, ny).ceilingTex === 'F_SKY1') game.removeMobj(m);
       else explodeMissile(game, m);
-      return;
+      hit = true;
+      return false;
     }
     m.x = nx; m.y = ny;
     m.sector = sectorAt(game.level, nx, ny);
-  } while (mx !== 0 || my !== 0);
+  });
+  if (hit) return;
 
   m.z += m.momz;
   if (m.z <= m.floorz) { m.z = m.floorz; explodeMissile(game, m); }
@@ -315,13 +310,9 @@ export function moveMobj(game, m) {
 function xyMove(game, m) {
   m.momx = Math.max(-MAXMOVE, Math.min(MAXMOVE, m.momx));
   m.momy = Math.max(-MAXMOVE, Math.min(MAXMOVE, m.momy));
-  let mx = m.momx, my = m.momy;
-  do {
-    let px, py;
-    if (Math.abs(mx) > MAXMOVE / 2 || Math.abs(my) > MAXMOVE / 2) { px = mx / 2; py = my / 2; mx /= 2; my /= 2; }
-    else { px = mx; py = my; mx = my = 0; }
-    if (!tryMoveMobj(game, m, m.x + px, m.y + py)) { m.momx = m.momy = 0; break; }  // 막히면 멈춤
-  } while (mx !== 0 || my !== 0);
+  splitMove(m.momx, m.momy, MAXMOVE / 2, (px, py) => {
+    if (!tryMoveMobj(game, m, m.x + px, m.y + py)) { m.momx = m.momy = 0; return false; }  // 막히면 멈춤
+  });
 
   if (m.z > m.floorz) return;                                    // 공중에서는 마찰 없음
   if (Math.abs(m.momx) < STOPSPEED && Math.abs(m.momy) < STOPSPEED) { m.momx = m.momy = 0; }

@@ -1,5 +1,6 @@
 import { sectorAt } from '../render/bsp.js';
-import { HEIGHT } from './physics.js';
+import { HEIGHT, GRAVITY, MAXMOVE, STOPSPEED, FRICTION } from './physics.js';
+import { splitMove } from './util.js';
 import { newAmmo, newMaxAmmo } from './items.js';
 import { newPsprites, tickWeapons, requestWeapon, cycleWeapon } from './weapons.js';
 
@@ -11,10 +12,6 @@ import { newPsprites, tickWeapons, requestWeapon, cycleWeapon } from './weapons.
  */
 export const VIEW_HEIGHT = 41;
 export const MOUSE_SENS = 0.0025;
-const GRAVITY = 1;
-const MAXMOVE = 30;
-const STOPSPEED = 0.0625;
-const FRICTION = 0.90625;
 const THRUST = 2048 / 65536;  // 명령 1당 추력 (원작: 명령값 × 2048 / 65536)
 const MAXBOB = 16;
 
@@ -191,16 +188,13 @@ export class Player {
         this.floorz = this.sector.floorHeight; this.ceilz = this.sector.ceilingHeight;
       } else {
         // 한 번에 MAXMOVE/2 보다 크게 움직이면 반으로 나눠 이동 (벽 통과 방지)
-        let mx = this.momx, my = this.momy, blocked = false;
-        do {
-          let px, py;
-          if (Math.abs(mx) > MAXMOVE / 2 || Math.abs(my) > MAXMOVE / 2) { px = mx / 2; py = my / 2; mx /= 2; my /= 2; }
-          else { px = mx; py = my; mx = my = 0; }
+        let blocked = false;
+        splitMove(this.momx, this.momy, MAXMOVE / 2, (px, py) => {
           if (!game.physics.tryMove(this, this.x + px, this.y + py)) {
             blocked = true;
             game.physics.slideMove(this, px, py);
           }
-        } while (mx !== 0 || my !== 0);
+        });
         if (blocked) { this.momx = this.x - x0; this.momy = this.y - y0; } // 벽에 막힌 만큼 운동량 감소
       }
     }

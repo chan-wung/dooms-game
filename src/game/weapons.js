@@ -1,5 +1,6 @@
 import { aimLineAttack, lineAttack, noiseAlert, MELEE_RANGE, MISSILE_RANGE } from './combat.js';
 import { startMissile } from './monsters.js';
+import { TWO_PI, normAngle, spread } from './util.js';
 
 /**
  * 플레이어 무기 (원작 p_pspr.c). 무기 스프라이트는 "psprite" 상태 머신으로 진행한다.
@@ -9,9 +10,6 @@ import { startMissile } from './monsters.js';
  */
 const S = (f, t, a = null, b = false) => ({ f, t, a, b });
 const WEAPON_TOP = 32, WEAPON_BOTTOM = 128, SWITCH_SPEED = 6;
-const TWO_PI = Math.PI * 2;
-const spread = (game, shift) => ((game.rnd() - game.rnd()) * TWO_PI) / 2 ** (32 - shift);
-const normAngle = (a) => { a %= TWO_PI; return a > Math.PI ? a - TWO_PI : a < -Math.PI ? a + TWO_PI : a; };
 
 export const WEAPONS = {
   fist: {

@@ -1,5 +1,6 @@
 import { SCREEN_W as W, VIEW_H, pspriteColormap } from '../render/renderer.js';
 import { WEAPONS } from '../game/weapons.js';
+import { normAngle } from '../game/util.js';
 
 /**
  * 화면 아래 상태바(체력·방어구·탄약·무기 칸·열쇠·얼굴)와 손에 든 무기 스프라이트.
@@ -9,8 +10,6 @@ const ST_Y = 168;
 const WEAPON_SLOTS = ['pistol', 'shotgun', 'chaingun', 'rocketLauncher', 'plasmaGun', 'bfg']; // 번호 2~7
 const AMMO_ORDER = ['clip', 'shell', 'cell', 'rocket'];
 
-const TWO_PI = Math.PI * 2;
-const normAngle = (a) => { a %= TWO_PI; return a > Math.PI ? a - TWO_PI : a < -Math.PI ? a + TWO_PI : a; };
 
 export class Hud {
   constructor(gfx, wad) {

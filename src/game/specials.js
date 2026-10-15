@@ -17,7 +17,6 @@ const VDOORSPEED = 2, VDOORWAIT = 150;
 const PLATSPEED = 1, PLATWAIT = 105; // 35 tic × 3초
 const FLOORSPEED = 1;
 const BUTTONTIME = 35;
-const rnd = () => (Math.random() * 256) | 0;
 
 /**
  * 바닥/천장을 한 걸음 움직인다. 움직인 결과 플레이어가 끼면 되돌리고 CRUSHED.
@@ -170,25 +169,27 @@ class FloorMover {
 
 // ---------- thinker: 조명 ----------
 class LightFlash { // 불규칙 깜빡임 (섹터 특수 1)
-  constructor(sec) {
+  constructor(game, sec) {
+    this.rnd = game.rnd;
     this.sec = sec; this.max = sec.light; this.min = minSurroundingLight(sec, sec.light);
-    this.count = (rnd() & 64) + 1;
+    this.count = (this.rnd() & 64) + 1;
   }
   tick() {
     if (--this.count > 0) return false;
-    if (this.sec.light === this.max) { this.sec.light = this.min; this.count = (rnd() & 7) + 1; }
-    else { this.sec.light = this.max; this.count = (rnd() & 64) + 1; }
+    if (this.sec.light === this.max) { this.sec.light = this.min; this.count = (this.rnd() & 7) + 1; }
+    else { this.sec.light = this.max; this.count = (this.rnd() & 64) + 1; }
     return false;
   }
 }
 
 class Strobe { // 일정한 점멸 (섹터 특수 2, 3, 4, 12, 13)
-  constructor(sec, darkTime, inSync) {
+  constructor(game, sec, darkTime, inSync) {
+    this.rnd = game.rnd;
     this.sec = sec; this.darkTime = darkTime; this.brightTime = 5;
     this.max = sec.light;
     this.min = minSurroundingLight(sec, sec.light);
     if (this.min === this.max) this.min = 0;
-    this.count = inSync ? 1 : (rnd() & 7) + 1;
+    this.count = inSync ? 1 : (this.rnd() & 7) + 1;
   }
   tick() {
     if (--this.count > 0) return false;
@@ -211,10 +212,10 @@ class Glow { // 천천히 밝아졌다 어두워짐 (섹터 특수 8)
 }
 
 class FireFlicker { // 불꽃 (섹터 특수 17)
-  constructor(sec) { this.sec = sec; this.max = sec.light; this.min = minSurroundingLight(sec, sec.light) + 16; this.count = 4; }
+  constructor(game, sec) { this.rnd = game.rnd; this.sec = sec; this.max = sec.light; this.min = minSurroundingLight(sec, sec.light) + 16; this.count = 4; }
   tick() {
     if (--this.count > 0) return false;
-    const amount = (rnd() & 3) * 16;
+    const amount = (this.rnd() & 3) * 16;
     this.sec.light = this.sec.light - amount < this.min ? this.min : this.max - amount;
     this.count = 4;
     return false;
@@ -301,15 +302,15 @@ export class Specials {
     const g = this.game;
     for (const sec of this.level.sectors) {
       switch (sec.special) {
-        case 1: g.add(new LightFlash(sec)); break;
-        case 2: g.add(new Strobe(sec, 15, false)); break;
-        case 3: g.add(new Strobe(sec, 35, false)); break;
-        case 4: g.add(new Strobe(sec, 15, false)); break;
+        case 1: g.add(new LightFlash(g, sec)); break;
+        case 2: g.add(new Strobe(g, sec, 15, false)); break;
+        case 3: g.add(new Strobe(g, sec, 35, false)); break;
+        case 4: g.add(new Strobe(g, sec, 15, false)); break;
         case 8: g.add(new Glow(sec)); break;
         case 9: g.secretsTotal++; break;
-        case 12: g.add(new Strobe(sec, 35, true)); break;
-        case 13: g.add(new Strobe(sec, 15, true)); break;
-        case 17: g.add(new FireFlicker(sec)); break;
+        case 12: g.add(new Strobe(g, sec, 35, true)); break;
+        case 13: g.add(new Strobe(g, sec, 15, true)); break;
+        case 17: g.add(new FireFlicker(g, sec)); break;
       }
     }
     for (const ld of this.level.linedefs) if (ld.special === 48) g.add(new WallScroll(ld));
@@ -327,7 +328,7 @@ export class Specials {
     switch (sec.special) {
       case 5: if (!suit) hit(10); break;
       case 7: if (!suit) hit(5); break;
-      case 4: case 16: if (!suit || rnd() < 5) hit(20); break;
+      case 4: case 16: if (!suit || g.rnd() % 256 < 5) hit(20); break;
       case 9:
         g.secretsFound++; sec.special = 0; g.say('A secret is revealed!');
         break;

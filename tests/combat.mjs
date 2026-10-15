@@ -78,7 +78,7 @@ const sleepAll = (g) => { for (const m of g.mobjs) if (m.ai?.states.stand) { m.t
 for (const [type, name, expect] of [[3004, 'zombieman', 'hitscan'], [3001, 'imp', 'ranged'], [3002, 'demon', 'melee']]) {
   let done = false;
   for (const map of ['E1M1', 'E1M2', 'E1M3', 'E1M4', 'E1M5', 'E1M6', 'E1M7']) {
-    const g = loadGame(map, 11); const m = find(g, type); if (!m) continue;
+    const g = loadGame(map, 7); const m = find(g, type); if (!m) continue;
     const p = g.player; if (!placeFacing(g, m, [220, 300, 160])) continue;
     p.health = 1000; p.powers.invuln = 0; m.ambush = false; m.angle = Math.atan2(p.y - m.y, p.x - m.x);
     const d0 = Math.hypot(m.x - p.x, m.y - p.y), hp0 = p.health;

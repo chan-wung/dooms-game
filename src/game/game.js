@@ -18,19 +18,23 @@ const PICKUP_SOUND = {
 export const TICRATE = 35;
 const MAX_EFFECTS = 160; // 먼지/피가 한꺼번에 너무 많으면 오래된 것부터 지운다
 
-/** 재현 가능한 난수 (원작 P_Random 처럼 0..255) */
-const makeRng = (seed) => () => {
-  seed = (seed + 0x6d2b79f5) | 0;
-  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-  return (((t ^ (t >>> 14)) >>> 0) & 255);
-};
+/** 재현 가능한 난수 (원작 P_Random 처럼 0..255). state 만 저장하면 이어서 같은 수열이 나온다 */
+class Rng {
+  constructor(seed) { this.state = seed | 0; }
+  next() {
+    const seed = this.state = (this.state + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return (((t ^ (t >>> 14)) >>> 0) & 255);
+  }
+}
 
 export class Game {
   constructor(level, skill = 3, seed = 1, carry = null) {
     this.level = level;
     this.skill = skill;
-    this.rnd = makeRng(seed);
+    this.rng = new Rng(seed);
+    this.rnd = () => this.rng.next();
     this.actions = ACTIONS;
     this.validCount = 0;
     this.blockmap = new Blockmap(level);

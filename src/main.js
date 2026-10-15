@@ -14,6 +14,9 @@ import { SoundSystem } from './audio/sound.js';
 import { MusicPlayer, parseMus } from './audio/music.js';
 import { Game, TICRATE } from './game/game.js';
 import { MOUSE_SENS } from './game/player.js';
+import { Input } from './app/input.js';
+import { nextMapName } from './app/progress.js';
+import { loadSettings, saveSettings as storeSettings, readSlot, writeSlot, slotName } from './app/storage.js';
 
 const $ = (id) => document.getElementById(id);
 const $status = $('status'), $drop = $('drop'), $file = $('file');
@@ -25,24 +28,21 @@ const $msg = $('msg'), $overlay = $('overlay'), $hurt = $('hurt');
 
 const WAD_URL = '/wad/DOOM1.WAD';
 const TIC = 1 / TICRATE;
-const TURN_UNIT = (Math.PI * 2) / 65536; // 원작 각도 단위 → 라디안
 
 // ---------- 설정 (브라우저에 기억) ----------
-const SETTINGS_KEY = 'doomjs.settings';
-const settings = { sfx: 12, music: 8, sens: 5, skill: 3 };
-try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch { /* 저장소 사용 불가: 기본값 */ }
-const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* 무시 */ } };
+const settings = loadSettings({ sfx: 12, music: 8, sens: 5, skill: 3 });
+const saveSettings = () => storeSettings(settings);
 
 // ---------- 상태 ----------
 let wad = null, level = null, game = null, mapName = null;
 let appState = 'title';           // 'title' | 'play'
 let showAutomap = false;
-let mouseDX = 0, acc = 0;
+let acc = 0;
 const automap = new Automap($canvas);
 let renderer = null, screen = null, hud = null, menu = null, sound = null, music = null, touch = null;
 const screenBuf = new Uint32Array(SCREEN_W * SCREEN_H);  // 화면 버퍼 (3D 뷰 + 상태바 + 메뉴)
-let weaponKey = 0, mouseFire = false, wheel = 0;     // 다음 tic 에 처리할 입력
-const keys = Object.create(null);
+const input = new Input();
+const keys = input.keys;
 window.keys = keys; // 콘솔 디버깅용
 const mouseSens = () => MOUSE_SENS * (0.5 + settings.sens * 0.1);
 
@@ -95,24 +95,10 @@ const applySettings = () => {
   saveSettings();
 };
 
-// ---------- 레벨 진행 ----------
-/** 출구 다음 맵 (일반/비밀 출구). null 이면 에피소드 끝 */
-const nextMapName = (name, secret) => {
-  const m = /^E(\d)M(\d)$/.exec(name);
-  if (!m) return null;
-  const e = Number(m[1]), n = Number(m[2]);
-  const returnTo = { 1: 4, 2: 6, 3: 7 }; // 비밀 맵(M9)에서 나오면 돌아가는 곳
-  if (secret) return `E${e}M9`;
-  if (n === 9) return `E${e}M${returnTo[e]}`;
-  if (n === 8) return null;                // 에피소드 마지막
-  return `E${e}M${n + 1}`;
-};
-
-// ---------- 저장 (맵을 시작할 때 자동 저장: 그 맵을 이어받은 상태로 처음부터) ----------
-const SAVE_KEY = 'doomjs.save';
+// ---------- 저장 (맵을 시작할 때 슬롯 0 에 자동 저장: 그 맵을 이어받은 상태로 처음부터) ----------
 let levelStart = null;   // 이 맵을 시작할 때의 이어받은 상태 (다시 하기용)
-const writeSave = (map, skill, state) => { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, map, skill, state })); } catch { /* 저장소 사용 불가 */ } };
-const readSave = () => { try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); return s?.v === 1 && s.map ? s : null; } catch { return null; } };
+const writeAutoSave = (map, skill, state) =>
+  writeSlot(0, { v: 1, kind: 'start', map, skill, state, name: `${map}  START`, savedAt: Date.now() });
 
 /** carry: 이전 맵에서 이어받은 상태(없으면 권총 시작) */
 const openMap = (name, carry = null) => {
@@ -120,7 +106,7 @@ const openMap = (name, carry = null) => {
     level = loadLevel(wad, name);
     game = new Game(level, settings.skill, 1, carry);
     levelStart = carry;
-    writeSave(name, settings.skill, game.player.exportState());
+    writeAutoSave(name, settings.skill, game.player.exportState());
     game.onSound = (snd, src) => sound.play(snd, src);
     mapName = name;
     appState = 'play';
@@ -145,8 +131,7 @@ const lockPointer = () => { if (!touch && document.pointerLockElement !== $view)
 
 const openMenu = () => {
   if (!menu || menu.open) return;
-  for (const k in keys) delete keys[k];     // 눌려 있던 키가 메뉴 뒤에서 계속 먹지 않게
-  mouseFire = false;
+  input.releaseAll();
   setMode(false);
   menu.show('main');
   document.exitPointerLock?.();
@@ -163,7 +148,7 @@ const quitToTitle = () => {
 const startMenuActions = () => ({
   hasGame: () => appState === 'play' && !!game,
   loadGame: () => {
-    const s = readSave();
+    const s = readSlot(0);
     if (!s || !wad.has(s.map)) return false;
     settings.skill = s.skill; saveSettings(); menu.close(); openMap(s.map, s.state); lockPointer();
     return true;
@@ -256,12 +241,9 @@ window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
   if (e.code === 'Tab') setMode(!showAutomap);
   if (e.code === 'KeyR') { restartMap(); }
-  if (e.code === 'Enter' && game?.exited) {
-    const next = nextMapName(mapName, game.exited.secret);
-    if (next && wad.has(next)) { openMap(next, game.player.exportState()); lockPointer(); }
-  }
+  if (e.code === 'Enter' && game?.exited) nextMap();
   const digit = /^Digit([1-7])$/.exec(e.code);
-  if (digit && !showAutomap) weaponKey = Number(digit[1]);
+  if (digit && !showAutomap) input.weaponKey = Number(digit[1]);
   if (e.code === 'KeyN' && game) { game.player.noclip = !game.player.noclip; game.say(game.player.noclip ? 'NOCLIP ON' : 'NOCLIP OFF'); }
   if (e.code === 'KeyK' && game) { Object.assign(game.player.keys, { blue: true, yellow: true, red: true }); game.say('ALL KEYS'); }
   if (showAutomap) {
@@ -285,10 +267,10 @@ $view.addEventListener('click', (e) => {
   if (menu?.open) { menu.pointer(...toScreen(e), true); return; }
   if (appState === 'play') lockPointer();
 });
-$view.addEventListener('mousedown', (e) => { if (e.button === 0 && document.pointerLockElement === $view) mouseFire = true; });
-window.addEventListener('mouseup', (e) => { if (e.button === 0) mouseFire = false; });
-$view.addEventListener('wheel', (e) => { e.preventDefault(); wheel += Math.sign(e.deltaY); }, { passive: false });
-document.addEventListener('mousemove', (e) => { if (document.pointerLockElement === $view) mouseDX += e.movementX; });
+$view.addEventListener('mousedown', (e) => { if (e.button === 0 && document.pointerLockElement === $view) input.mouseFire = true; });
+window.addEventListener('mouseup', (e) => { if (e.button === 0) input.mouseFire = false; });
+$view.addEventListener('wheel', (e) => { e.preventDefault(); input.wheel += Math.sign(e.deltaY); }, { passive: false });
+document.addEventListener('mousemove', (e) => { if (document.pointerLockElement === $view) input.mouseDX += e.movementX; });
 // 포인터 잠금이 풀리면(Esc 등) 일시정지 메뉴를 연다
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement === $view) return;
@@ -332,30 +314,9 @@ if (isTouchDevice()) {
     if (document.fullscreenElement) return;
     $stage.requestFullscreen?.().then(() => window.screen.orientation?.lock?.('landscape')).catch(() => {});
   }, { once: true });
+  input.touch = touch;
   window.touch = touch; // 콘솔 디버깅용
 }
-
-// ---------- 입력 → 원작 명령 단위 ----------
-const buildCmd = () => {
-  const run = keys.ShiftLeft || keys.ShiftRight;
-  const dir = (pos, neg) => (pos ? 1 : 0) - (neg ? 1 : 0);
-  let forward = dir(keys.KeyW || keys.ArrowUp, keys.KeyS || keys.ArrowDown) * (run ? 50 : 25);
-  let side = dir(keys.KeyD, keys.KeyA) * (run ? 40 : 24);
-  let use = !!(keys.KeyE || keys.Space), cycle = Math.sign(wheel), weapon = weaponKey;
-  if (touch) {                                   // 조이스틱은 기울인 만큼 연속적으로
-    forward += Math.round(-touch.move.y * 50); side += Math.round(touch.move.x * 40);
-    const q = touch.takeQueued(); use = use || q.use; cycle = cycle || q.cycle; weapon = weapon || q.weapon;
-  }
-  return {
-    forward: Math.max(-50, Math.min(50, forward)),
-    side: Math.max(-40, Math.min(40, side)),
-    turn: dir(keys.ArrowLeft, keys.ArrowRight) * (run ? 1280 : 640) * TURN_UNIT,
-    use,
-    fire: !!(keys.ControlLeft || keys.ControlRight || keys.KeyF || mouseFire || touch?.fire),
-    weapon,
-    cycle,
-  };
-};
 
 // 다시 하기: 죽었으면 권총 시작, 아니면 이 맵을 시작했을 때의 상태로
 const restartMap = () => { openMap(mapName, game?.player.dead ? null : levelStart); lockPointer(); };
@@ -410,12 +371,12 @@ const frame = (now) => {
     if (appState === 'play' && game) {
       const p = game.player, paused = menu.open;
       sound.listener = { x: p.x, y: p.y, angle: p.angle };
-      if (touch) mouseDX += touch.takeTurn(dt) * 1.4;                    // 화면 드래그 = 마우스처럼
-      if (mouseDX) { if (!p.dead && !game.exited && !paused) p.turnBy(-mouseDX * mouseSens()); mouseDX = 0; }
+      if (touch) input.mouseDX += touch.takeTurn(dt) * 1.4;              // 화면 드래그 = 마우스처럼
+      if (input.mouseDX) { if (!p.dead && !game.exited && !paused) p.turnBy(-input.mouseDX * mouseSens()); input.mouseDX = 0; }
 
       // 로직은 35Hz 고정 tic, 화면은 매 프레임 (tic 사이는 위치 보간). 메뉴가 열려 있으면 정지
       if (paused) acc = 0; else acc += dt;
-      while (acc >= TIC) { game.tick(buildCmd()); weaponKey = 0; wheel = 0; acc -= TIC; }
+      while (acc >= TIC) { game.tick(input.buildCmd()); input.endTic(); acc -= TIC; }
       if (songFor() !== currentSong) updateMusic();                    // 결과 화면/승리 음악 전환
 
       if (showAutomap) {

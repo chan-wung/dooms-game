@@ -9,6 +9,11 @@ import { LINE_FLAGS } from '../wad/level.js';
 export const RADIUS = 16;
 export const HEIGHT = 56;
 export const STEP_HEIGHT = 24;
+// 이동 물리 상수 (플레이어·몬스터 공용, 원작 수치)
+export const GRAVITY = 1;
+export const MAXMOVE = 30;
+export const STOPSPEED = 0.0625;
+export const FRICTION = 0.90625;
 
 /** 상자가 선을 가로지르는가 (모서리 4개가 선 양쪽에 걸쳐 있으면 true) */
 const boxStraddles = (ld, l, b, r, t) => {

@@ -8,7 +8,8 @@
   :root { --bg: #0b0b0d; --txt: #b8b8c0; --accent: #ff5a3c; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { min-height: 100vh; background: var(--bg); color: var(--txt);
-         font-family: ui-monospace, Consolas, monospace; padding: 16px; }
+         font-family: ui-monospace, Consolas, monospace; padding: 16px;
+         display: flex; flex-direction: column; align-items: center; }
   h1 { font-size: 18px; color: var(--accent); font-weight: 400; margin-bottom: 12px; }
   #drop { border: 2px dashed #444; padding: 32px 16px; text-align: center; margin-bottom: 16px; }
   #drop.over { border-color: var(--accent); }
@@ -16,7 +17,6 @@
   #bar { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; font-size: 13px; flex-wrap: wrap; }
   #bar label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
   select, button { background: #1a1a1f; color: var(--txt); border: 1px solid #444; padding: 4px 8px; font: inherit; cursor: pointer; }
-  body { display: flex; flex-direction: column; align-items: center; }
   #stage { width: min(100%, calc((100dvh - 150px) * 4 / 3)); position: relative; }
   #stage:fullscreen { width: 100vw; height: 100dvh; background: #000; display: grid; place-items: center; }
   #stage:fullscreen #view { width: min(100vw, calc(100dvh * 4 / 3)); }
@@ -59,7 +59,7 @@
 </style>
 </head>
 <body>
-  <h1>doom-js · Phase 7 — 소리 · 메뉴 · 모바일</h1>
+  <h1>doom-js</h1>
   <div id="drop">
     <p>public/wad/DOOM1.WAD 를 찾지 못하면 여기에 WAD 파일을 드롭하거나 선택하세요</p>
     <input type="file" id="file" accept=".wad,.WAD">
