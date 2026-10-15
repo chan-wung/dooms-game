@@ -7,7 +7,7 @@
 
 ## Phase 체크리스트
 - [x] Phase 0 — Vite 셋업 + WAD 로딩 (`src/wad/wad.js`)
-- [ ] Phase 1 — 레벨 파싱 + 2D 오토맵
+- [x] Phase 1 — 레벨 파싱 + 2D 오토맵 (`src/wad/level.js`, `src/ui/automap.js`)
 - [ ] Phase 2 — BSP 렌더러(단색)
 - [ ] Phase 3 — 텍스처·플랫·조명
 - [ ] Phase 4 — 충돌·물리·문/리프트

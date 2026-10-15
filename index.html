@@ -13,17 +13,35 @@
   #drop { border: 2px dashed #444; padding: 32px 16px; text-align: center; margin-bottom: 16px; }
   #drop.over { border-color: var(--accent); }
   #status { margin-bottom: 12px; font-size: 14px; white-space: pre-wrap; }
-  #lumps { font-size: 12px; max-height: 60vh; overflow: auto; white-space: pre; }
+  #bar { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; font-size: 13px; flex-wrap: wrap; }
+  #bar label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+  select, button { background: #1a1a1f; color: var(--txt); border: 1px solid #444; padding: 4px 8px; font: inherit; }
+  #automap { display: block; width: 100%; height: 70vh; background: #000; border: 1px solid #333; cursor: grab; }
+  #automap.drag { cursor: grabbing; }
+  .help { margin-top: 8px; font-size: 12px; }
+  .help b { color: var(--accent); font-weight: 400; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-  <h1>doom-js · Phase 0 — WAD 로딩</h1>
+  <h1>doom-js · Phase 1 — 레벨 파싱 + 오토맵</h1>
   <div id="drop">
     <p>public/wad/DOOM1.WAD 를 찾지 못하면 여기에 WAD 파일을 드롭하거나 선택하세요</p>
     <input type="file" id="file" accept=".wad,.WAD">
   </div>
   <div id="status">로딩 중…</div>
-  <div id="lumps"></div>
+  <div id="bar" hidden>
+    <label>맵 <select id="mapSel"></select></label>
+    <label><input type="checkbox" id="optFollow" checked> 플레이어 따라가기 (F)</label>
+    <label><input type="checkbox" id="optFlat"> 높이 같은 양면선</label>
+    <label><input type="checkbox" id="optThings"> Things (T)</label>
+    <button id="btnFit">전체 보기 (0)</button>
+  </div>
+  <canvas id="automap" hidden></canvas>
+  <p class="help" id="help" hidden>
+    <b>WASD</b> 이동 · <b>←/→</b> 회전 · <b>휠</b> 줌 · <b>드래그</b> 팬 · <b>F</b> 따라가기 · <b>T</b> Things · <b>0</b> 전체 보기 ·
+    선 색: <span style="color:#fc0000">외벽</span> / <span style="color:#bc7840">바닥 단차</span> / <span style="color:#fcfc00">천장 단차</span> / <span style="color:#ff40ff">비밀 플래그</span>
+  </p>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
