@@ -108,10 +108,19 @@ const nextMapName = (name, secret) => {
   return `E${e}M${n + 1}`;
 };
 
-const openMap = (name) => {
+// ---------- 저장 (맵을 시작할 때 자동 저장: 그 맵을 이어받은 상태로 처음부터) ----------
+const SAVE_KEY = 'doomjs.save';
+let levelStart = null;   // 이 맵을 시작할 때의 이어받은 상태 (다시 하기용)
+const writeSave = (map, skill, state) => { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, map, skill, state })); } catch { /* 저장소 사용 불가 */ } };
+const readSave = () => { try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); return s?.v === 1 && s.map ? s : null; } catch { return null; } };
+
+/** carry: 이전 맵에서 이어받은 상태(없으면 권총 시작) */
+const openMap = (name, carry = null) => {
   try {
     level = loadLevel(wad, name);
-    game = new Game(level, settings.skill);
+    game = new Game(level, settings.skill, 1, carry);
+    levelStart = carry;
+    writeSave(name, settings.skill, game.player.exportState());
     game.onSound = (snd, src) => sound.play(snd, src);
     mapName = name;
     appState = 'play';
@@ -153,6 +162,12 @@ const quitToTitle = () => {
 
 const startMenuActions = () => ({
   hasGame: () => appState === 'play' && !!game,
+  loadGame: () => {
+    const s = readSave();
+    if (!s || !wad.has(s.map)) return false;
+    settings.skill = s.skill; saveSettings(); menu.close(); openMap(s.map, s.state); lockPointer();
+    return true;
+  },
   newGame: (skill) => { settings.skill = skill; saveSettings(); menu.close(); openMap('E1M1'); lockPointer(); },
   quitToTitle,
   settingsChanged: applySettings,
@@ -240,10 +255,10 @@ window.addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.repeat) return;
   if (e.code === 'Tab') setMode(!showAutomap);
-  if (e.code === 'KeyR') { openMap(mapName); lockPointer(); }
+  if (e.code === 'KeyR') { restartMap(); }
   if (e.code === 'Enter' && game?.exited) {
     const next = nextMapName(mapName, game.exited.secret);
-    if (next && wad.has(next)) { openMap(next); lockPointer(); }
+    if (next && wad.has(next)) { openMap(next, game.player.exportState()); lockPointer(); }
   }
   const digit = /^Digit([1-7])$/.exec(e.code);
   if (digit && !showAutomap) weaponKey = Number(digit[1]);
@@ -342,6 +357,21 @@ const buildCmd = () => {
   };
 };
 
+// 다시 하기: 죽었으면 권총 시작, 아니면 이 맵을 시작했을 때의 상태로
+const restartMap = () => { openMap(mapName, game?.player.dead ? null : levelStart); lockPointer(); };
+const nextMap = () => {
+  const next = nextMapName(mapName, game.exited.secret);
+  if (next && wad.has(next)) { openMap(next, game.player.exportState()); lockPointer(); }
+};
+
+// 모바일: 결과/사망 화면에서 탭으로 진행 (Enter/R 이 없으므로)
+let endShownAt = 0;
+$stage.addEventListener('pointerdown', () => {
+  if (!touch || appState !== 'play' || !game || menu.open || !endShownAt || performance.now() - endShownAt < 800) return;
+  if (game.exited) { if (nextMapName(mapName, game.exited.secret)) nextMap(); else restartMap(); }
+  else if (game.player.dead) restartMap();
+});
+
 // ---------- 오버레이 (출구 / 사망 / 메시지) ----------
 const mmss = (tics) => `${Math.floor(tics / TICRATE / 60)}:${String(Math.floor(tics / TICRATE) % 60).padStart(2, '0')}`;
 const updateOverlay = () => {
@@ -358,13 +388,14 @@ const updateOverlay = () => {
     $overlay.hidden = false;
     $overlay.innerHTML =
       `<b>${mapName} 완료</b><br>시간 ${mmss(game.exited.time)}<br>킬 ${game.killsFound}/${game.killsTotal} · 아이템 ${game.itemsFound}/${game.itemsTotal} · 비밀 ${game.secretsFound}/${game.secretsTotal}<br><br>` +
-      (next ? `<span>Enter: ${next} 로 이동</span>` : '<span>THE END — 에피소드 클리어!</span>') + '<br><span>R: 다시 하기</span>';
+      (next ? `<span>${touch ? '화면을 탭' : 'Enter'}: ${next} 로 이동</span>` : '<span>THE END — 에피소드 클리어!</span>') + `<br><span>${touch ? (next ? '' : '화면을 탭: 다시 하기') : 'R: 다시 하기'}</span>`;
   } else if (p.dead) {
     $overlay.hidden = false;
-    $overlay.innerHTML = '<b>YOU DIED</b><br><br><span>R: 다시 시작</span>';
+    $overlay.innerHTML = `<b>YOU DIED</b><br><br><span>${touch ? '화면을 탭' : 'R'}: 다시 시작</span>`;
   } else {
     $overlay.hidden = true;
   }
+  if (game.exited || p.dead) { if (!endShownAt) endShownAt = performance.now(); } else endShownAt = 0;
 };
 
 // ---------- 루프 ----------

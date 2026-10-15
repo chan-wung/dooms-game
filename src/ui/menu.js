@@ -3,7 +3,7 @@
  * 상태: title(타이틀) → main(새 게임/옵션/종료) → skill(난이도) | options(소리·마우스) → closed(게임 중)
  */
 const SKILLS = ['M_JKILL', 'M_ROUGH', 'M_HURT', 'M_ULTRA', 'M_NMARE'];
-const MAIN_ITEMS = [{ patch: 'M_NGAME', id: 'new' }, { patch: 'M_OPTION', id: 'options' }, { patch: 'M_QUITG', id: 'quit' }];
+const MAIN_ITEMS = [{ patch: 'M_NGAME', id: 'new' }, { patch: 'M_OPTION', id: 'options' }, { patch: 'M_LOADG', id: 'load' }, { patch: 'M_QUITG', id: 'quit' }];
 const OPTION_ROWS = [
   { patch: 'M_SFXVOL', key: 'sfx', max: 15 },
   { patch: 'M_MUSVOL', key: 'music', max: 15 },
@@ -13,7 +13,7 @@ const THERM_X = 80;
 
 export class Menu {
   /**
-   * @param actions { hasGame(), newGame(skill), quitToTitle(), resume(), settingsChanged(), play(soundName) }
+   * @param actions { hasGame(), newGame(skill), loadGame(), quitToTitle(), resume(), settingsChanged(), play(soundName) }
    */
   constructor(hud, actions, settings) {
     this.hud = hud;
@@ -72,6 +72,7 @@ export class Menu {
     this.actions.play('PISTOL');
     if (id === 'new') this.show('skill', Math.max(0, Math.min(4, this.settings.skill - 1)));
     else if (id === 'options') this.show('options');
+    else if (id === 'load') { if (!this.actions.loadGame()) this.actions.play('OOF'); }
     else this.actions.quitToTitle();
   }
 

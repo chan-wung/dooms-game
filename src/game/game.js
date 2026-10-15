@@ -27,7 +27,7 @@ const makeRng = (seed) => () => {
 };
 
 export class Game {
-  constructor(level, skill = 3, seed = 1) {
+  constructor(level, skill = 3, seed = 1, carry = null) {
     this.level = level;
     this.skill = skill;
     this.rnd = makeRng(seed);
@@ -58,6 +58,7 @@ export class Game {
     this.itemsTotal = mobjs.filter((m) => m.info.countItem).length;
     this.killsTotal = mobjs.filter((m) => m.info.monster).length;
 
+    if (carry) this.player.importState(carry);   // 이전 맵에서 이어받은 체력·무기·탄약
     setupWeapons(this, this.player);
   }
 

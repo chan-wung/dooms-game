@@ -53,6 +53,23 @@ export class Player {
   get shootable() { return !this.dead; }
   get fuzz() { return this.powers.invis > 0; }
 
+  /** 다음 맵/저장으로 이어지는 상태 (원작: 체력·방어구·무기·탄약·배낭. 열쇠와 일시 효과는 제외) */
+  exportState() {
+    return {
+      health: this.health, armor: this.armor, armorType: this.armorType,
+      ammo: { ...this.ammo }, maxAmmo: { ...this.maxAmmo }, backpack: this.backpack,
+      weapons: [...this.weapons], readyWeapon: this.pendingWeapon || this.readyWeapon,
+    };
+  }
+
+  importState(s) {
+    this.health = Math.max(1, s.health); this.armor = s.armor; this.armorType = s.armorType;
+    this.ammo = { ...this.ammo, ...s.ammo }; this.maxAmmo = { ...this.maxAmmo, ...s.maxAmmo }; this.backpack = !!s.backpack;
+    this.weapons = new Set(s.weapons);
+    this.readyWeapon = this.weapons.has(s.readyWeapon) ? s.readyWeapon : 'pistol';
+    this.pendingWeapon = this.readyWeapon;
+  }
+
   snapshot() { this.prevX = this.x; this.prevY = this.y; this.prevViewz = this.viewz; this.prevAngle = this.angle; }
 
   /** tic 사이를 보간한 시점 (alpha: 0..1). colormap: 무적(반전)/빛 증폭 중이면 고정 컬러맵 */

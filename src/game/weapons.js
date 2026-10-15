@@ -286,8 +286,8 @@ export function tickWeapons(game, p, cmd) {
 
 /** 레벨 시작/부활 시 무기 준비 */
 export function setupWeapons(game, p) {
-  p.readyWeapon = 'pistol';
-  p.pendingWeapon = 'pistol';
+  if (!p.weapons.has(p.readyWeapon)) p.readyWeapon = 'pistol';   // 이어받은 무기가 있으면 그것을 든다
+  p.pendingWeapon = p.readyWeapon;
   p.psp = newPsprites();
   bringUpWeapon(game, p);
 }
