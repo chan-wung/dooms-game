@@ -16,7 +16,8 @@ import { Game, TICRATE } from './game/game.js';
 import { MOUSE_SENS } from './game/player.js';
 import { Input } from './app/input.js';
 import { nextMapName } from './app/progress.js';
-import { loadSettings, saveSettings as storeSettings, readSlot, writeSlot, slotName } from './app/storage.js';
+import { loadSettings, saveSettings as storeSettings, readSlot, writeSlot, listSlots, slotName, lastSlot, setLastSlot } from './app/storage.js';
+import { saveGame, loadGame } from './game/savegame.js';
 
 const $ = (id) => document.getElementById(id);
 const $status = $('status'), $drop = $('drop'), $file = $('file');
@@ -100,13 +101,17 @@ let levelStart = null;   // 이 맵을 시작할 때의 이어받은 상태 (다
 const writeAutoSave = (map, skill, state) =>
   writeSlot(0, { v: 1, kind: 'start', map, skill, state, name: `${map}  START`, savedAt: Date.now() });
 
-/** carry: 이전 맵에서 이어받은 상태(없으면 권총 시작) */
-const openMap = (name, carry = null) => {
+/**
+ * carry: 이전 맵에서 이어받은 상태(없으면 권총 시작)
+ * saved: 맵 도중 저장 데이터 (있으면 그 상태로 이어서)
+ */
+const openMap = (name, carry = null, saved = null) => {
   try {
-    level = loadLevel(wad, name);
-    game = new Game(level, settings.skill, 1, carry);
-    levelStart = carry;
-    writeAutoSave(name, settings.skill, game.player.exportState());
+    const lvl = loadLevel(wad, name);
+    const g = saved ? loadGame(lvl, saved.skill, saved.game) : new Game(lvl, settings.skill, 1, carry);
+    level = lvl; game = g;
+    levelStart = saved ? saved.levelStart : carry;
+    if (!saved) writeAutoSave(name, settings.skill, game.player.exportState());
     game.onSound = (snd, src) => sound.play(snd, src);
     mapName = name;
     appState = 'play';
@@ -145,14 +150,37 @@ const quitToTitle = () => {
   updateMusic();
 };
 
+const canSave = () => appState === 'play' && !!game && !game.player.dead && !game.exited;
+
+/** 슬롯 n 에서 불러오기. 슬롯이 비었거나 맵을 못 열면 false */
+const loadSlot = (n) => {
+  const s = readSlot(n);
+  if (!s || !wad.has(s.map)) return false;
+  settings.skill = s.skill; saveSettings(); menu.close();
+  if (s.kind === 'full') openMap(s.map, null, s); else openMap(s.map, s.state);
+  lockPointer();
+  return !!game;
+};
+
+/** 지금 상태를 슬롯 n 에 저장 */
+const saveSlot = (n) => {
+  if (!canSave()) return false;
+  const data = { v: 2, kind: 'full', map: mapName, skill: game.skill, name: slotName(mapName), savedAt: Date.now(), levelStart, game: saveGame(game) };
+  if (!writeSlot(n, data)) { game.say('SAVE FAILED'); return false; }
+  setLastSlot(n);
+  menu.close(); game.say('GAME SAVED.'); lockPointer();
+  return true;
+};
+
+const quickSave = () => { if (!menu.open && canSave()) saveSlot(lastSlot()); };
+const quickLoad = () => { if (readSlot(lastSlot())) loadSlot(lastSlot()); };
+
 const startMenuActions = () => ({
   hasGame: () => appState === 'play' && !!game,
-  loadGame: () => {
-    const s = readSlot(0);
-    if (!s || !wad.has(s.map)) return false;
-    settings.skill = s.skill; saveSettings(); menu.close(); openMap(s.map, s.state); lockPointer();
-    return true;
-  },
+  canSave,
+  slotNames: () => listSlots().map((s, n) => (s ? (n === 0 ? `AUTO  ${s.map}` : s.name) : null)),
+  loadSlot,
+  saveSlot,
   newGame: (skill) => { settings.skill = skill; saveSettings(); menu.close(); openMap('E1M1'); lockPointer(); },
   quitToTitle,
   settingsChanged: applySettings,
@@ -231,6 +259,11 @@ const toggle = ($el) => { $el.checked = !$el.checked; $el.dispatchEvent(new Even
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement) return; // 선택/체크 중엔 무시
   startAudio();
+  if (e.code === 'F6' || e.code === 'F9') {        // 퀵세이브 / 퀵로드 (브라우저 기본 동작은 막는다)
+    e.preventDefault();
+    if (menu && !e.repeat) { if (e.code === 'F6') quickSave(); else quickLoad(); }
+    return;
+  }
   if (menu?.open) {                                // 메뉴가 열려 있으면 메뉴가 키를 받는다
     if (menu.key(e.code)) { e.preventDefault(); return; }
   }

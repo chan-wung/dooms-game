@@ -1,19 +1,22 @@
 /**
  * 타이틀 화면과 메뉴 (원작 m_menu.c 의 좌표와 그래픽을 그대로 쓴다. 320×200 화면 좌표).
- * 상태: title(타이틀) → main(새 게임/옵션/종료) → skill(난이도) | options(소리·마우스) → closed(게임 중)
+ * 상태: title(타이틀) → main(새 게임/옵션/불러오기/저장/종료) → skill(난이도) | options(소리·마우스) | load | save → closed(게임 중)
  */
 const SKILLS = ['M_JKILL', 'M_ROUGH', 'M_HURT', 'M_ULTRA', 'M_NMARE'];
-const MAIN_ITEMS = [{ patch: 'M_NGAME', id: 'new' }, { patch: 'M_OPTION', id: 'options' }, { patch: 'M_LOADG', id: 'load' }, { patch: 'M_QUITG', id: 'quit' }];
+const MAIN_ITEMS = [{ patch: 'M_NGAME', id: 'new' }, { patch: 'M_OPTION', id: 'options' }, { patch: 'M_LOADG', id: 'load' }, { patch: 'M_SAVEG', id: 'save' }, { patch: 'M_QUITG', id: 'quit' }];
 const OPTION_ROWS = [
   { patch: 'M_SFXVOL', key: 'sfx', max: 15 },
   { patch: 'M_MUSVOL', key: 'music', max: 15 },
   { patch: 'M_MSENS', key: 'sens', max: 9 },
 ];
 const THERM_X = 80;
+// 저장/불러오기 목록: 슬롯 0 = 자동 저장(불러오기에만), 1~ = 수동 저장 (원작 LoadDef: x=80, y=54, 줄 간격 16)
+const SLOT_X = 80, SLOT_Y = 54, SLOT_H = 16, SLOT_CELLS = 24;
+const LOAD_SLOTS = [0, 1, 2, 3, 4, 5], SAVE_SLOTS = [1, 2, 3, 4, 5];
 
 export class Menu {
   /**
-   * @param actions { hasGame(), newGame(skill), loadGame(), quitToTitle(), resume(), settingsChanged(), play(soundName) }
+   * @param actions { hasGame(), canSave(), newGame(skill), slotNames(), loadSlot(n), saveSlot(n), quitToTitle(), settingsChanged(), play(soundName) }
    */
   constructor(hud, actions, settings) {
     this.hud = hud;
@@ -49,6 +52,13 @@ export class Menu {
         if (enter) { this.actions.play('PISTOL'); this.actions.newGame(this.cursor + 1); return true; }
         if (code === 'Escape') { this.actions.play('SWTCHX'); this.show('main'); return true; }
         return true;
+      case 'load': case 'save': {
+        const slots = this.slotList();
+        if (up || down) { this.move(up ? -1 : 1, slots.length); return true; }
+        if (enter) { this.chooseSlot(); return true; }
+        if (code === 'Escape') { this.actions.play('SWTCHX'); this.show('main', this.state === 'load' ? 2 : 3); return true; }
+        return true;
+      }
       case 'options':
         if (up || down) { this.move(up ? -1 : 1, OPTION_ROWS.length); return true; }
         if (code === 'ArrowLeft' || code === 'ArrowRight' || code === 'KeyA' || code === 'KeyD') {
@@ -72,8 +82,19 @@ export class Menu {
     this.actions.play('PISTOL');
     if (id === 'new') this.show('skill', Math.max(0, Math.min(4, this.settings.skill - 1)));
     else if (id === 'options') this.show('options');
-    else if (id === 'load') { if (!this.actions.loadGame()) this.actions.play('OOF'); }
+    else if (id === 'load') this.show('load');
+    else if (id === 'save') { if (this.actions.canSave()) this.show('save'); else this.actions.play('OOF'); }
     else this.actions.quitToTitle();
+  }
+
+  slotList() { return this.state === 'save' ? SAVE_SLOTS : LOAD_SLOTS; }
+
+  /** 커서가 가리키는 슬롯으로 불러오기/저장 */
+  chooseSlot() {
+    const slot = this.slotList()[this.cursor];
+    if (this.state === 'load') { if (!this.actions.loadSlot(slot)) this.actions.play('OOF'); else this.actions.play('PISTOL'); }
+    else if (!this.actions.saveSlot(slot)) this.actions.play('OOF');
+    else this.actions.play('SWTCHN');
   }
 
   adjust(row, delta, absolute = null) {
@@ -89,13 +110,15 @@ export class Menu {
     if (this.state === 'title') { if (click) this.key('Enter'); return; }
     const rows = this.state === 'main' ? { y0: 64, h: 16, n: MAIN_ITEMS.length, x0: 90, x1: 240 }
       : this.state === 'skill' ? { y0: 63, h: 16, n: SKILLS.length, x0: 40, x1: 260 }
-        : this.state === 'options' ? { y0: 38, h: 32, n: OPTION_ROWS.length, x0: 60, x1: 260 } : null;
+        : this.state === 'options' ? { y0: 38, h: 32, n: OPTION_ROWS.length, x0: 60, x1: 260 }
+          : this.state === 'load' || this.state === 'save' ? { y0: SLOT_Y, h: SLOT_H, n: this.slotList().length, x0: SLOT_X - 8, x1: SLOT_X + 200 } : null;
     if (!rows || x < rows.x0 || x > rows.x1) return;
     const i = Math.floor((y - rows.y0) / rows.h);
     if (i < 0 || i >= rows.n) return;
     if (this.cursor !== i) { this.cursor = i; this.actions.play('PSTOP'); }
     if (!click) return;
     if (this.state === 'main') this.chooseMain();
+    else if (this.state === 'load' || this.state === 'save') this.chooseSlot();
     else if (this.state === 'skill') { this.actions.play('PISTOL'); this.actions.newGame(i + 1); }
     else if (this.state === 'options') {
       // 온도계 막대를 직접 눌러 값 지정
@@ -136,7 +159,24 @@ export class Menu {
         this.thermometer(frame, THERM_X, y + 16, r.max + 1, this.settings[r.key]);
       });
       h.blit(frame, skull, THERM_X - 32, 38 + 32 * this.cursor - 5);
+    } else if (this.state === 'load' || this.state === 'save') {
+      h.blit(frame, p(this.state === 'load' ? 'M_LOADG' : 'M_SAVEG'), 72, 28);
+      const names = this.actions.slotNames();
+      this.slotList().forEach((slot, i) => {
+        const y = SLOT_Y + SLOT_H * i;
+        this.slotBorder(frame, SLOT_X, y + 7);          // 원작처럼 테두리는 글자보다 7 아래에 그린다
+        h.text(frame, names[slot] ?? 'EMPTY SLOT', SLOT_X, y);
+      });
+      h.blit(frame, skull, SLOT_X - 32, SLOT_Y + SLOT_H * this.cursor - 5);
     }
+  }
+
+  /** 슬롯 한 줄의 테두리 (원작 M_DrawSaveLoadBorder) */
+  slotBorder(frame, x, y) {
+    const h = this.hud;
+    h.blit(frame, h.patch('M_LSLEFT'), x - 8, y);
+    for (let i = 0; i < SLOT_CELLS; i++) h.blit(frame, h.patch('M_LSCNTR'), x + i * 8, y);
+    h.blit(frame, h.patch('M_LSRGHT'), x + SLOT_CELLS * 8, y);
   }
 
   /** 슬라이더 (원작 M_DrawThermo): 왼쪽 끝 + 가운데 칸들 + 오른쪽 끝 + 현재 값 표시 */

@@ -237,6 +237,37 @@ class WallScroll { // 특수 48: 벽 텍스처가 계속 흐름
   tick() { if (this.line.right) this.line.right.xOffset += 1; return false; }
 }
 
+// ---------- 세이브/로드: thinker 직렬화 ----------
+const THINKER_KINDS = {
+  door: Door, plat: Plat, floor: FloorMover, flash: LightFlash, strobe: Strobe,
+  glow: Glow, fire: FireFlicker, button: ButtonTimer, scroll: WallScroll,
+};
+const CLAIMS_SECTOR = new Set([Door, Plat, FloorMover]);  // 만든 쪽이 sector.specialData 에 자신을 건다
+const RUNTIME_LINKS = ['game', 'rnd', 'specials'];         // 저장하지 않고 불러올 때 다시 연결
+
+/** thinker → 순수 데이터 (섹터/선은 인덱스로 참조) */
+export function saveThinker(t) {
+  const kind = Object.keys(THINKER_KINDS).find((k) => t instanceof THINKER_KINDS[k]);
+  const d = { kind };
+  for (const [k, v] of Object.entries(t)) {
+    if (RUNTIME_LINKS.includes(k)) continue;
+    d[k] = v && typeof v === 'object' ? ('floorHeight' in v ? { sec: v.index } : { line: v.index }) : v;
+  }
+  return d;
+}
+
+export function loadThinker(game, d) {
+  const C = THINKER_KINDS[d.kind];
+  const t = Object.create(C.prototype);   // 생성자의 소리/연결 부작용 없이 상태만 복원
+  for (const [k, v] of Object.entries(d)) {
+    if (k === 'kind') continue;
+    t[k] = v && typeof v === 'object' ? ('sec' in v ? game.level.sectors[v.sec] : game.level.linedefs[v.line]) : v;
+  }
+  t.game = game; t.rnd = game.rnd; t.specials = game.specials;
+  if (CLAIMS_SECTOR.has(C)) t.sector.specialData = t;
+  return t;
+}
+
 // ---------- 선 특수 효과 표 ----------
 /** 이름 → [걷기 1회, 걷기 반복, 스위치 1회, 스위치 반복] 번호 */
 const DOOR_NUMS = {
