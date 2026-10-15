@@ -47,6 +47,7 @@ function tryMoveMobj(game, m, nx, ny) {
 function move(game, m) {
   if (m.moveDir === DI_NODIR) return false;
   const nx = m.x + m.ai.speed * XSPEED[m.moveDir], ny = m.y + m.ai.speed * YSPEED[m.moveDir];
+  const ox = m.x, oy = m.y;
   if (!tryMoveMobj(game, m, nx, ny)) {
     // 막은 선 중에 열 수 있는 문(특수 1)이 있으면 연다
     let good = false;
@@ -56,6 +57,7 @@ function move(game, m) {
     if (good) m.moveDir = DI_NODIR;
     return good;
   }
+  game.specials.crossLines(m, ox, oy);   // 텔레포트 선 · 문 · 리프트 선을 밟았으면 작동 (텔레포트하면 floorz 도 새 자리 것)
   m.z = m.floorz;
   return true;
 }
@@ -303,11 +305,13 @@ export function nightmareRespawn(game, m) {
   const { spawnX: x, spawnY: y } = m, sec = sectorAt(game.level, x, y);
   if (game.physics.check(x, y, sec.floorHeight, m.info.height, m.info.radius, { monster: true }).blocked) return;   // 누가 서 있다
 
+  game.spawnKind('tfog', m.x, m.y, m.z);
   game.playSound('TELEPT', m);
   const reborn = new Mobj(m.type, m.info, x, y, m.spawnAngle, sec);
   reborn.spawnAmbush = reborn.ambush = m.spawnAmbush;
   reborn.reaction = 18;
   game.addMobj(reborn);
+  game.spawnKind('tfog', x, y, sec.floorHeight);
   game.playSound('TELEPT', reborn);
   game.removeMobj(m);
 }

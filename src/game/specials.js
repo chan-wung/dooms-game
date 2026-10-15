@@ -1,6 +1,7 @@
 import { sectorAt } from '../render/bsp.js';
 import { LINE_FLAGS } from '../wad/level.js';
 import { Physics } from './physics.js';
+import { damageMobj } from './combat.js';
 import {
   lowestFloorSurrounding, highestFloorSurrounding, nextHighestFloor, lowestCeilingSurrounding,
   minSurroundingLight, maxSurroundingLight, nextSector,
@@ -288,6 +289,7 @@ const FLOOR_NUMS = {
 };
 const KEY_DOORS = { 26: 'blue', 32: 'blue', 27: 'yellow', 34: 'yellow', 28: 'red', 33: 'red' };
 const MANUAL_DOORS = new Set([1, 26, 27, 28, 31, 32, 33, 34, 117, 118]);
+const MONSTER_CROSS = new Set([4, 10, 39, 88, 97]);   // 몬스터도 밟으면 작동하는 걷기 선 (원작 P_CrossSpecialLine): 문 열기, 리프트, 텔레포트
 
 export class Specials {
   constructor(game) {
@@ -333,8 +335,8 @@ export class Specials {
     this.def(52, 'walk', false, () => { g.exitLevel(false); return true; });
     this.def(124, 'walk', false, () => { g.exitLevel(true); return true; });
     // 텔레포트 (뒷면에서 들어가면 무시)
-    this.def(39, 'walk', false, (l, side) => this.teleport(l, side));
-    this.def(97, 'walk', true, (l, side) => this.teleport(l, side));
+    this.def(39, 'walk', false, (l, side, who) => this.teleport(l, side, who));
+    this.def(97, 'walk', true, (l, side, who) => this.teleport(l, side, who));
   }
 
   // ---------- 레벨 시작 시 ----------
@@ -380,16 +382,16 @@ export class Specials {
     }
   }
 
-  /** 이번 tic 에 (ox,oy)→플레이어 현재 위치로 가로지른 특수 선 발동 (걷기) */
-  crossLines(p, ox, oy) {
-    const crossed = [];
-    this.game.blockmap.forEachLine(Math.min(ox, p.x) - 1, Math.min(oy, p.y) - 1, Math.max(ox, p.x) + 1, Math.max(oy, p.y) + 1, (ld) => {
-      if (!ld.special) return;
-      if (Physics.intersect(ld, ox, oy, p.x, p.y) < 0) return;
+  /** 이번 tic 에 (ox,oy)→who(플레이어 또는 몬스터) 현재 위치로 가로지른 특수 선 발동 (걷기) */
+  crossLines(who, ox, oy) {
+    const player = who === this.game.player, crossed = [];
+    this.game.blockmap.forEachLine(Math.min(ox, who.x) - 1, Math.min(oy, who.y) - 1, Math.max(ox, who.x) + 1, Math.max(oy, who.y) + 1, (ld) => {
+      if (!ld.special || (!player && !MONSTER_CROSS.has(ld.special))) return;
+      if (Physics.intersect(ld, ox, oy, who.x, who.y) < 0) return;
       const oldSide = Physics.pointOnLineSide(ld, ox, oy);
-      if (oldSide !== Physics.pointOnLineSide(ld, p.x, p.y)) crossed.push([ld, oldSide]);
+      if (oldSide !== Physics.pointOnLineSide(ld, who.x, who.y)) crossed.push([ld, oldSide]);
     });
-    for (const [ld, side] of crossed) this.activate(ld, side, 'walk');
+    for (const [ld, side] of crossed) this.activate(ld, side, 'walk', who);
   }
 
   /** 사용 키: 정면 64 유닛 안에서 가장 가까운 특수 선 작동 */
@@ -431,12 +433,12 @@ export class Specials {
   }
 
   // ---------- 발동 ----------
-  activate(ld, side, how) {
+  activate(ld, side, how, who = this.game.player) {
     if (how === 'use' && MANUAL_DOORS.has(ld.special)) { this.manualDoor(ld); return; }
     const def = this.table.get(ld.special);
     if (!def || def.trigger !== how) return;
     if (how === 'use' && ld.buttonActive) return;
-    const ok = def.action(ld, side);
+    const ok = def.action(ld, side, who);
     if (!ok) return;
     if (how === 'use') {
       this.game.playSound(ld.special === 11 || ld.special === 51 ? 'SWTCHX' : 'SWTCHN', { x: (ld.v1.x + ld.v2.x) / 2, y: (ld.v1.y + ld.v2.y) / 2 });
@@ -590,17 +592,38 @@ export class Specials {
   }
 
   // ---------- 텔레포트 ----------
-  teleport(ld, side) {
+  /**
+   * who(플레이어/몬스터)를 태그가 같은 섹터의 텔레포트 도착 지점(thing 14)으로 옮긴다 (원작 EV_Teleport + P_TeleportMove).
+   * 도착 지점에 서 있는 것은 플레이어가 밟아 죽이고(텔레프래그), 몬스터는 남이 서 있으면 실패한다.
+   * 출발·도착 지점에 안개(TFOG)와 소리가 난다.
+   */
+  teleport(ld, side, who = this.game.player) {
     if (side === 1) return false;
-    const g = this.game, p = g.player;
+    const g = this.game, isPlayer = who === g.player;
     for (const sec of this.sectorsWithTag(ld.tag)) {
       const dest = this.level.things.find((t) => t.type === 14 && sectorAt(this.level, t.x, t.y) === sec);
       if (!dest) continue;
-      g.playSound('TELEPT', { x: p.x, y: p.y });
-      p.teleportTo(g, dest.x, dest.y, (dest.angle * Math.PI) / 180);
+      const near = (m) => Math.abs(m.x - dest.x) < m.radius + who.radius && Math.abs(m.y - dest.y) < m.radius + who.radius;
+      const victims = g.shootables.filter((m) => m !== who && !m.removed && near(m));
+      if (victims.length && !isPlayer) return false;
+      for (const v of victims) damageMobj(g, v, who, who, 10000);
+
+      const ox = who.x, oy = who.y, oz = who.z, angle = (dest.angle * Math.PI) / 180;
+      g.spawnKind('tfog', ox, oy, oz);
+      g.playSound('TELEPT', { x: ox, y: oy });
+      if (isPlayer) who.teleportTo(g, dest.x, dest.y, angle);
+      else this.teleportMobj(who, dest.x, dest.y, angle);
+      g.spawnKind('tfog', dest.x + 20 * Math.cos(angle), dest.y + 20 * Math.sin(angle), sec.floorHeight);
       g.playSound('TELEPT', { x: dest.x, y: dest.y });
       return true;
     }
     return false;
+  }
+
+  teleportMobj(m, x, y, angle) {
+    m.x = x; m.y = y; m.angle = angle;
+    m.momx = m.momy = m.momz = 0;
+    m.sector = sectorAt(this.level, x, y);
+    m.floorz = m.z = m.sector.floorHeight; m.ceilz = m.sector.ceilingHeight;
   }
 }

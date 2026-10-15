@@ -10,7 +10,7 @@ if (!existsSync(new URL('../public/wad/DOOM1.WAD', import.meta.url))) {
   process.exit(0);
 }
 
-const suites = ['things', 'movement', 'combat', 'skill', 'save', 'rules', 'audio', 'render'];
+const suites = ['things', 'movement', 'combat', 'skill', 'save', 'rules', 'features', 'audio', 'render'];
 let failed = 0;
 for (const name of suites) {
   const r = spawnSync(process.execPath, [new URL(`./${name}.mjs`, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')], { encoding: 'utf8', timeout: 600000 });

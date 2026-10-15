@@ -115,6 +115,10 @@ export const AI = {
     sprite: 'PUFF', effect: true, radius: 0, height: 0, rise: 1,
     states: { fly: [S('A', 4, null, true), S('B', 4), S('C', 4), S('D', 4)] }, after: { fly: 'remove' },
   },
+  tfog: {        // 텔레포트 안개 (출발·도착 지점, 부활할 때)
+    sprite: 'TFOG', effect: true, radius: 0, height: 0,
+    states: { fly: [...'ABABCDEFGHIJ'].map((f) => S(f, 6, null, true)) }, after: { fly: 'remove' },
+  },
   blood: {       // 피 (큰 것 → 작은 것 순서로 맞는 데미지에 따라 시작 프레임이 달라진다)
     sprite: 'BLUD', effect: true, radius: 0, height: 0, rise: 2,
     states: {

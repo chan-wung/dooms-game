@@ -1,6 +1,6 @@
 import { sectorAt } from '../render/bsp.js';
 import { HEIGHT, GRAVITY, MAXMOVE, STOPSPEED, FRICTION } from './physics.js';
-import { splitMove } from './util.js';
+import { splitMove, normAngle } from './util.js';
 import { newAmmo, newMaxAmmo } from './items.js';
 import { newPsprites, tickWeapons, requestWeapon, cycleWeapon } from './weapons.js';
 
@@ -37,7 +37,8 @@ export class Player {
     this.grin = 0; this.fireTics = 0;           // 얼굴 표정용 (무기를 주운 직후 / 계속 쏘는 시간)
     this.damageCount = 0; this.bonusCount = 0; this.attacker = null; this.attackerAngle = 0; this.mass = 100;
     this.powers = { invuln: 0, invis: 0, radsuit: 0, lightamp: 0, berserk: 0, automap: false };   // berserk: 먹은 뒤 지난 tic (0 = 없음)
-    this.dead = false; this.noclip = false;
+    this.dead = false; this.noclip = false; this.god = false;
+    this.deadTics = 0; this.respawn = false;   // 죽은 뒤 지난 tic / USE 로 다시 시작을 요청했는가
     this.reaction = 0;      // 텔레포트 직후 잠깐 못 움직임
     this.useHeld = false;
     this.snapshot();
@@ -56,6 +57,7 @@ export class Player {
       health: this.health, armor: this.armor, armorType: this.armorType,
       ammo: { ...this.ammo }, maxAmmo: { ...this.maxAmmo }, backpack: this.backpack,
       weapons: [...this.weapons], readyWeapon: this.pendingWeapon || this.readyWeapon,
+      god: this.god, noclip: this.noclip,
     };
   }
 
@@ -65,6 +67,7 @@ export class Player {
     this.weapons = new Set(s.weapons);
     this.readyWeapon = this.weapons.has(s.readyWeapon) ? s.readyWeapon : 'pistol';
     this.pendingWeapon = this.readyWeapon;
+    this.god = !!s.god; this.noclip = !!s.noclip;
   }
 
   snapshot() { this.prevX = this.x; this.prevY = this.y; this.prevViewz = this.viewz; this.prevAngle = this.angle; }
@@ -92,7 +95,7 @@ export class Player {
 
   /** 데미지: 무적이면 무시, 방어구가 일부 흡수 (원작 P_DamageMobj) */
   damage(n, game, source = null) {
-    if (this.dead || this.powers.invuln > 0) return;
+    if (this.dead || this.god || this.powers.invuln > 0) return;
     if (game.skill === 1) n = Math.floor(n / 2);   // 가장 쉬운 난이도: 피해 절반
     if (this.armorType) {
       let saved = Math.floor(n / (this.armorType === 1 ? 3 : 2));
@@ -109,7 +112,7 @@ export class Player {
     game.flashDamage = 6;
     if (this.health <= 0) {
       game.playSound(this.health < -50 ? 'PDIEHI' : 'PLDETH');
-      this.health = 0; this.dead = true; game.say('YOU DIED  —  R 키로 다시 시작');
+      this.health = 0; this.dead = true; game.say('YOU DIED  —  R / E 키로 다시 시작', true);
     } else {
       game.playSound('PLPAIN');
     }
@@ -144,7 +147,7 @@ export class Player {
 
     // ----- 입력 -----
     if (this.dead) {
-      this.viewheight = Math.max(6, this.viewheight - 1);
+      this.deathThink(cmd);
     } else {
       this.angle += cmd.turn;
       if (this.reaction > 0) this.reaction--;
@@ -176,6 +179,20 @@ export class Player {
     if (this.bonusCount > 0) this.bonusCount--;
     if (this.grin > 0) this.grin--;
     this.fireTics = cmd.fire ? this.fireTics + 1 : 0;
+  }
+
+  /** 죽은 뒤 (원작 P_DeathThink): 시점이 내려앉고, 죽인 상대 쪽으로 5도씩 돌아보며, USE 로 다시 시작 */
+  deathThink(cmd) {
+    this.viewheight = Math.max(6, this.viewheight - 1);
+    this.deadTics++;
+    const a = this.attacker;
+    if (a && a !== this) {
+      const diff = normAngle(Math.atan2(a.y - this.y, a.x - this.x) - this.angle), step = (5 * Math.PI) / 180;
+      if (Math.abs(diff) < step) { this.angle += diff; }
+      else this.angle += Math.sign(diff) * step;
+    }
+    if (cmd.use && !this.useHeld && this.deadTics > 35) this.respawn = true;   // 방금 눌러 둔 USE 에 바로 넘어가지 않게 1초는 기다린다
+    this.useHeld = cmd.use;
   }
 
   moveXY(game, cmd) {

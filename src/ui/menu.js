@@ -1,118 +1,211 @@
 /**
- * 타이틀 화면과 메뉴 (원작 m_menu.c 의 좌표와 그래픽을 그대로 쓴다. 320×200 화면 좌표).
- * 상태: title(타이틀) → main(새 게임/옵션/불러오기/저장/종료) → skill(난이도) | options(소리·마우스) | load | save → closed(게임 중)
+ * 타이틀 화면과 메뉴 (원작 m_menu.c 의 좌표와 그래픽을 쓴다. 320×200 화면 좌표).
+ * 상태: title → main(이어하기/새 게임/옵션/불러오기/저장/도움말/종료) → skill | options → sound | cheats | load | save | confirm | help → closed(게임 중)
+ *
+ * 각 상태는 layout() 이 항목 목록을 만들고, 키·마우스·터치·그리기가 모두 그 목록을 쓴다.
+ *   항목 = { id, patch | text, x, y, h, act(), adjust(dir), therm: { get, set, max }, ... }
+ * 모든 하위 메뉴에는 왼쪽 위에 BACK 버튼이 있다 (Esc 와 같음 — 터치에는 Esc 가 없다).
  */
 const SKILLS = ['M_JKILL', 'M_ROUGH', 'M_HURT', 'M_ULTRA', 'M_NMARE'];
-const MAIN_ITEMS = [{ patch: 'M_NGAME', id: 'new' }, { patch: 'M_OPTION', id: 'options' }, { patch: 'M_LOADG', id: 'load' }, { patch: 'M_SAVEG', id: 'save' }, { patch: 'M_QUITG', id: 'quit' }];
-const OPTION_ROWS = [
-  { patch: 'M_SFXVOL', key: 'sfx', max: 15 },
-  { patch: 'M_MUSVOL', key: 'music', max: 15 },
-  { patch: 'M_MSENS', key: 'sens', max: 9 },
+const POWERS = [
+  { id: 'invuln', label: 'INVULNERABILITY' }, { id: 'berserk', label: 'BERSERK' }, { id: 'invis', label: 'INVISIBILITY' },
+  { id: 'radsuit', label: 'RADIATION SUIT' }, { id: 'automap', label: 'COMPUTER MAP' }, { id: 'lightamp', label: 'LIGHT AMP' },
 ];
-const THERM_X = 80;
-// 옵션 메뉴 아래쪽의 글자 줄: 맵 고르기(왼쪽/오른쪽 또는 탭으로 다음 맵) + 그 맵으로 이동
-const MAP_ROW = OPTION_ROWS.length, START_ROW = MAP_ROW + 1;
-const MAP_Y = 38 + 32 * OPTION_ROWS.length, ROW_H = 16;
 // 저장/불러오기 목록: 슬롯 0 = 자동 저장(불러오기에만), 1~ = 수동 저장 (원작 LoadDef: x=80, y=54, 줄 간격 16)
 const SLOT_X = 80, SLOT_Y = 54, SLOT_H = 16, SLOT_CELLS = 24;
 const LOAD_SLOTS = [0, 1, 2, 3, 4, 5], SAVE_SLOTS = [1, 2, 3, 4, 5];
+const BACK_W = 62, BACK_H = 20;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 export class Menu {
   /**
-   * @param actions { maps(), currentMap(), warp(name), hasGame(), canSave(), newGame(skill), slotNames(), loadSlot(n), saveSlot(n), quitToTitle(), settingsChanged(), play(soundName) }
+   * @param actions { maps(), currentMap(), warp(name), hasGame(), hasAuto(), canSave(), newGame(skill), slotNames(), loadSlot(n), saveSlot(n),
+   *   quitToTitle(), settingsChanged(), play(soundName), resume(), cheat(name, arg), cheatInfo() }
    */
   constructor(hud, actions, settings) {
     this.hud = hud;
     this.actions = actions;
-    this.settings = settings;          // { sfx 0..15, music 0..15, sens 0..9, skill 1..5 }
+    this.settings = settings;          // { sfx 0..15, music 0..15, sens 0..9, skill 1..5, messages 0/1, screenSize 3..11, gamma 0..4 }
     this.state = 'title';
     this.cursor = 0;
     this.mapIdx = 0;                   // 옵션 메뉴에서 고른 맵 (actions.maps() 의 번호)
+    this.power = 0;                    // 치트 메뉴에서 고른 파워업
+    this.confirm = null;               // { lines, yes(), back: [상태, 커서] }
+    this.helpPage = 0; this.helpFrom = 'closed';
   }
 
   get open() { return this.state !== 'closed'; }
 
-  show(state, cursor = 0) { this.state = state; this.cursor = cursor; }
+  /** cursor: 번호 또는 항목 id */
+  show(state, cursor = 0) {
+    this.state = state;
+    this.cursor = 0;
+    if (typeof cursor === 'string') this.cursor = Math.max(0, this.layout().items.findIndex((it) => it.id === cursor));
+    else this.cursor = cursor;
+  }
   close() { this.state = 'closed'; }
 
-  // ---------- 입력 ----------
-  /** 키 입력 처리. 처리했으면 true (게임으로 전달하지 않음) */
-  key(code) {
-    const up = code === 'ArrowUp' || code === 'KeyW', down = code === 'ArrowDown' || code === 'KeyS';
-    const enter = code === 'Enter' || code === 'Space' || code === 'NumpadEnter';
+  /** 게임으로 돌아간다 (포인터 잠금 등은 화면 쪽이 처리) */
+  resume() { this.close(); this.actions.resume?.(); }
+
+  /** 확인 창: 예 → yes(), 아니오/BACK → back 으로 */
+  ask(lines, yes, back) {
+    this.confirm = { lines, yes, back };
+    this.show('confirm', 1);          // 기본 선택은 NO (실수로 누른 탭이 일을 내지 않게)
+  }
+
+  /** 도움말 (F1 / READ THIS!) */
+  help(from = 'closed') { this.helpFrom = from; this.helpPage = 0; this.show('help'); }
+
+  /** 한 단계 위로 (Esc, BACK 버튼) */
+  back() {
+    const a = this.actions;
+    a.play('SWTCHX');
+    switch (this.state) {
+      case 'main': if (a.hasGame()) this.resume(); else this.show('title'); break;
+      case 'skill': case 'options': this.show('main', this.state === 'skill' ? 'new' : 'options'); break;
+      case 'sound': this.show('options', 'sound'); break;
+      case 'cheats': this.show('options', 'cheats'); break;
+      case 'load': this.show('main', 'load'); break;
+      case 'save': this.show('main', 'save'); break;
+      case 'confirm': if (this.confirm.back === 'close') this.resume(); else this.show(...this.confirm.back); break;
+      case 'help': if (this.helpFrom === 'closed') this.resume(); else this.show(this.helpFrom, 'help'); break;
+      default: break;
+    }
+  }
+
+  // ---------- 항목 ----------
+  /** 현재 상태의 항목들 */
+  layout() {
+    const a = this.actions, s = this.settings;
+    const L = { items: [], skullX: 0, back: true, title: () => {} };
+    const hud = this.hud, I = L.items;
+    const set = (key, v, lo, hi) => { s[key] = clamp(v, lo, hi); a.play('STNMOV'); a.settingsChanged(); };
 
     switch (this.state) {
-      case 'title':
-        this.actions.play('SWTCHN');
-        this.show('main');
-        return true;
-      case 'main':
-        if (up || down) { this.move(up ? -1 : 1, MAIN_ITEMS.length); return true; }
-        if (enter) { this.chooseMain(); return true; }
-        if (code === 'Escape') { this.actions.play('SWTCHX'); this.actions.hasGame() ? this.close() : this.show('title'); return true; }
-        return true;
-      case 'skill':
-        if (up || down) { this.move(up ? -1 : 1, SKILLS.length); return true; }
-        if (enter) { this.actions.play('PISTOL'); this.actions.newGame(this.cursor + 1); return true; }
-        if (code === 'Escape') { this.actions.play('SWTCHX'); this.show('main'); return true; }
-        return true;
-      case 'load': case 'save': {
-        const slots = this.slotList();
-        if (up || down) { this.move(up ? -1 : 1, slots.length); return true; }
-        if (enter) { this.chooseSlot(); return true; }
-        if (code === 'Escape') { this.actions.play('SWTCHX'); this.show('main', this.state === 'load' ? 2 : 3); return true; }
-        return true;
+      case 'main': {
+        L.back = false; L.skullX = 65;
+        L.title = (f) => hud.blit(f, hud.patch('M_DOOM'), 94, 2);
+        if (a.hasGame()) I.push({ id: 'resume', text: 'RESUME', act: () => { a.play('PISTOL'); this.resume(); } });
+        else if (a.hasAuto?.()) I.push({ id: 'continue', text: 'CONTINUE', act: () => { if (a.loadSlot(0)) a.play('PISTOL'); else a.play('OOF'); } });
+        I.push({ id: 'new', patch: 'M_NGAME', act: () => { a.play('PISTOL'); this.show('skill', clamp(s.skill - 1, 0, 4)); } });
+        I.push({ id: 'options', patch: 'M_OPTION', act: () => { a.play('PISTOL'); this.mapIdx = Math.max(0, a.maps().indexOf(a.currentMap())); this.show('options'); } });
+        I.push({ id: 'load', patch: 'M_LOADG', act: () => { a.play('PISTOL'); this.show('load'); } });
+        I.push({ id: 'save', patch: 'M_SAVEG', act: () => { if (a.canSave()) { a.play('PISTOL'); this.show('save'); } else a.play('OOF'); } });
+        I.push({ id: 'help', patch: 'M_RDTHIS', act: () => { a.play('PISTOL'); this.help('main'); } });
+        I.push({ id: 'quit', patch: 'M_QUITG', act: () => {
+          a.play('PISTOL');
+          if (a.hasGame()) this.ask(['QUIT TO THE TITLE SCREEN?', 'UNSAVED PROGRESS WILL BE LOST.'], () => a.quitToTitle(), ['main', 'quit']);
+          else this.show('title');
+        } });
+        I.forEach((it, i) => Object.assign(it, { x: 97, y: 56 + 16 * i, h: 16, rx0: 80, rx1: 250 }));
+        break;
       }
-      case 'options':
-        if (up || down) { this.move(up ? -1 : 1, OPTION_ROWS.length + 2); return true; }
-        if (code === 'ArrowLeft' || code === 'ArrowRight' || code === 'KeyA' || code === 'KeyD') {
-          const dir = code === 'ArrowLeft' || code === 'KeyA' ? -1 : 1;
-          if (this.cursor < MAP_ROW) this.adjust(this.cursor, dir); else this.cycleMap(dir);
-          return true;
-        }
-        if (enter && this.cursor >= MAP_ROW) { this.warpToMap(); return true; }
-        if (code === 'Escape' || enter) { this.actions.play('SWTCHX'); this.show('main', 1); return true; }
-        return true;
-      default:
-        return false;
+      case 'skill': {
+        L.skullX = 16;
+        L.title = (f) => { hud.blit(f, hud.patch('M_NEWG'), 96, 14); hud.blit(f, hud.patch('M_SKILL'), 54, 38); };
+        SKILLS.forEach((patch, i) => I.push({
+          id: `skill${i}`, patch, x: 48, y: 63 + 16 * i, h: 16, rx0: 40, rx1: 270,
+          act: () => {
+            a.play('PISTOL');
+            if (a.hasGame()) this.ask(['START A NEW GAME?', 'YOUR CURRENT PROGRESS WILL BE LOST.'], () => a.newGame(i + 1), ['skill', i]);
+            else a.newGame(i + 1);
+          },
+        }));
+        break;
+      }
+      case 'options': {
+        L.skullX = 28;
+        L.title = (f) => {
+          hud.blit(f, hud.patch('M_OPTTTL'), 108, 15);
+          this.dim(f, 56, 150, 256, 197);                  // 타이틀 그림 위에서도 글자가 읽히게
+        };
+        const maps = a.maps();
+        I.push({ id: 'end', patch: 'M_ENDGAM', x: 60, y: 37, h: 16, act: () => {
+          if (!a.hasGame()) { a.play('OOF'); return; }
+          a.play('PISTOL');
+          this.ask(['ARE YOU SURE YOU WANT TO', 'END THE GAME?'], () => a.quitToTitle(), ['options', 'end']);
+        } });
+        const toggleMsg = () => set('messages', s.messages ? 0 : 1, 0, 1);
+        I.push({ id: 'msg', patch: 'M_MESSG', x: 60, y: 53, h: 16, extra: [s.messages ? 'M_MSGON' : 'M_MSGOFF', 180], adjust: toggleMsg, act: toggleMsg });
+        I.push({ id: 'size', patch: 'M_SCRNSZ', x: 60, y: 69, h: 32, therm: { get: () => s.screenSize - 3, set: (v) => set('screenSize', v + 3, 3, 11), max: 8 } });
+        I.push({ id: 'sens', patch: 'M_MSENS', x: 60, y: 101, h: 32, therm: { get: () => s.sens, set: (v) => set('sens', v, 0, 9), max: 9 } });
+        I.push({ id: 'sound', patch: 'M_SVOL', x: 60, y: 133, h: 16, act: () => { a.play('PISTOL'); this.show('sound'); } });
+        const gamma = (d) => set('gamma', (s.gamma + d + 5) % 5, 0, 4);
+        I.push({ id: 'bright', text: `BRIGHTNESS  < ${s.gamma} >`, x: 64, y: 152, h: 11, adjust: gamma, act: () => gamma(1) });
+        I.push({ id: 'cheats', text: 'CHEATS', x: 64, y: 163, h: 11, act: () => { a.play('PISTOL'); this.show('cheats'); } });
+        const cycleMap = (d) => { const n = maps.length; if (n) { this.mapIdx = (this.mapIdx + d + n) % n; a.play('STNMOV'); } };
+        I.push({ id: 'map', text: `MAP  < ${maps[this.mapIdx] ?? '-'} >`, x: 64, y: 174, h: 11, adjust: cycleMap, act: () => cycleMap(1) });
+        I.push({ id: 'warp', text: 'START MAP', x: 64, y: 185, h: 11, act: () => this.warpToMap() });
+        I.forEach((it) => Object.assign(it, { rx0: 56, rx1: 270 }));
+        break;
+      }
+      case 'sound': {
+        L.skullX = 48;
+        L.title = (f) => hud.blit(f, hud.patch('M_SVOL'), 60, 38);
+        I.push({ id: 'sfx', patch: 'M_SFXVOL', x: 80, y: 64, h: 32, therm: { get: () => s.sfx, set: (v) => set('sfx', v, 0, 15), max: 15 } });
+        I.push({ id: 'music', patch: 'M_MUSVOL', x: 80, y: 96, h: 32, therm: { get: () => s.music, set: (v) => set('music', v, 0, 15), max: 15 } });
+        I.forEach((it) => Object.assign(it, { rx0: 60, rx1: 280 }));
+        break;
+      }
+      case 'cheats': {
+        L.skullX = 28;
+        L.title = (f) => { this.dim(f, 50, 14, 270, 150); this.hud.text(f, 'CHEATS', 160 - hud.textWidth('CHEATS') / 2, 20); };
+        const c = a.cheatInfo?.() ?? {};
+        const onOff = (b) => (b ? 'ON' : 'OFF');
+        const cheat = (name, arg) => () => { if (!a.hasGame()) { a.play('OOF'); return; } a.cheat(name, arg); a.play('SWTCHN'); };
+        const power = (d) => { this.power = (this.power + d + POWERS.length) % POWERS.length; a.play('STNMOV'); };
+        I.push({ id: 'god', text: `GOD MODE  ${onOff(c.god)}`, act: cheat('god') });
+        I.push({ id: 'noclip', text: `NO CLIPPING  ${onOff(c.noclip)}`, act: cheat('noclip') });
+        I.push({ id: 'kfa', text: 'ALL WEAPONS, AMMO, KEYS', act: cheat('kfa') });
+        I.push({ id: 'fa', text: 'ALL WEAPONS, AMMO (NO KEYS)', act: cheat('fa') });
+        I.push({ id: 'map', text: `AUTOMAP  ${['OFF', 'ALL LINES', 'LINES + THINGS'][c.automap ?? 0]}`, act: cheat('map') });
+        I.push({ id: 'power', text: `POWER-UP  < ${POWERS[this.power].label} >`, adjust: power, act: () => power(1) });
+        I.push({ id: 'give', text: 'GIVE THE POWER-UP', act: cheat('power', POWERS[this.power].id) });
+        I.forEach((it, i) => Object.assign(it, { x: 64, y: 40 + 15 * i, h: 14, rx0: 50, rx1: 270 }));
+        break;
+      }
+      case 'load': case 'save': {
+        L.skullX = SLOT_X - 32;
+        L.title = (f) => {
+          hud.blit(f, hud.patch(this.state === 'load' ? 'M_LOADG' : 'M_SAVEG'), 72, 28);
+          const names = a.slotNames();
+          this.slotList().forEach((slot, i) => {
+            const y = SLOT_Y + SLOT_H * i;
+            this.slotBorder(f, SLOT_X, y + 7);          // 원작처럼 테두리는 글자보다 7 아래에 그린다
+            hud.text(f, names[slot] ?? 'EMPTY SLOT', SLOT_X, y);
+          });
+        };
+        this.slotList().forEach((slot, i) => I.push({
+          id: `slot${slot}`, x: SLOT_X, y: SLOT_Y + SLOT_H * i, h: SLOT_H, rx0: SLOT_X - 8, rx1: SLOT_X + 200, hidden: true,
+          act: () => this.chooseSlot(slot),
+        }));
+        break;
+      }
+      case 'confirm': {
+        L.skullX = 0;
+        const lines = this.confirm?.lines ?? [];
+        L.title = (f) => {
+          this.dim(f, 20, 56, 300, 150);
+          lines.forEach((line, i) => hud.text(f, line, 160 - hud.textWidth(line) / 2, 66 + 11 * i));
+        };
+        I.push({ id: 'yes', text: 'YES', x: 118, y: 124, h: 14, rx0: 96, rx1: 156, skullX: 94, act: () => { this.actions.play('PISTOL'); this.confirm.yes(); } });
+        I.push({ id: 'no', text: 'NO', x: 196, y: 124, h: 14, rx0: 176, rx1: 236, skullX: 172, act: () => this.back() });
+        break;
+      }
+      default: break;
     }
-  }
-
-  move(dir, n) {
-    this.cursor = (this.cursor + dir + n) % n;
-    this.actions.play('PSTOP');
-  }
-
-  chooseMain() {
-    const id = MAIN_ITEMS[this.cursor].id;
-    this.actions.play('PISTOL');
-    if (id === 'new') this.show('skill', Math.max(0, Math.min(4, this.settings.skill - 1)));
-    else if (id === 'options') {
-      const i = this.actions.maps().indexOf(this.actions.currentMap());
-      this.mapIdx = Math.max(0, i);
-      this.show('options');
-    }
-    else if (id === 'load') this.show('load');
-    else if (id === 'save') { if (this.actions.canSave()) this.show('save'); else this.actions.play('OOF'); }
-    else this.actions.quitToTitle();
+    return L;
   }
 
   slotList() { return this.state === 'save' ? SAVE_SLOTS : LOAD_SLOTS; }
 
-  /** 커서가 가리키는 슬롯으로 불러오기/저장 */
-  chooseSlot() {
-    const slot = this.slotList()[this.cursor];
-    if (this.state === 'load') { if (!this.actions.loadSlot(slot)) this.actions.play('OOF'); else this.actions.play('PISTOL'); }
-    else if (!this.actions.saveSlot(slot)) this.actions.play('OOF');
-    else this.actions.play('SWTCHN');
-  }
-
-  /** 옵션 메뉴의 맵 고르기: 목록을 돌아가며 */
-  cycleMap(dir) {
-    const n = this.actions.maps().length;
-    if (!n) return;
-    this.mapIdx = (this.mapIdx + dir + n) % n;
-    this.actions.play('STNMOV');
+  /** 슬롯으로 불러오기/저장 */
+  chooseSlot(slot) {
+    const a = this.actions;
+    if (this.state === 'load') { if (!a.loadSlot(slot)) a.play('OOF'); else a.play('PISTOL'); }
+    else if (!a.saveSlot(slot)) a.play('OOF');
+    else a.play('SWTCHN');
   }
 
   /** 고른 맵을 처음부터 시작 (게임 중이든 타이틀이든) */
@@ -123,47 +216,64 @@ export class Menu {
     this.actions.warp(name);
   }
 
-  adjust(row, delta, absolute = null) {
-    const r = OPTION_ROWS[row];
-    const v = absolute ?? this.settings[r.key] + delta;
-    this.settings[r.key] = Math.max(0, Math.min(r.max, v));
-    this.actions.play('STNMOV');
-    this.actions.settingsChanged();
+  // ---------- 입력 ----------
+  /** 키 입력 처리. 처리했으면 true (게임으로 전달하지 않음) */
+  key(code) {
+    const up = code === 'ArrowUp' || code === 'KeyW', down = code === 'ArrowDown' || code === 'KeyS';
+    const left = code === 'ArrowLeft' || code === 'KeyA', right = code === 'ArrowRight' || code === 'KeyD';
+    const enter = code === 'Enter' || code === 'Space' || code === 'NumpadEnter';
+
+    if (this.state === 'title') {
+      this.actions.play('SWTCHN');
+      this.show('main');
+      return true;
+    }
+    if (this.state === 'help') {
+      if (code === 'Escape') { this.back(); return true; }
+      this.advanceHelp();
+      return true;
+    }
+    if (this.state === 'confirm') {
+      if (code === 'KeyY') { this.actions.play('PISTOL'); this.confirm.yes(); return true; }
+      if (code === 'KeyN' || code === 'Escape') { this.back(); return true; }
+    }
+    if (code === 'Escape') { this.back(); return true; }
+
+    const items = this.layout().items, it = items[this.cursor];
+    if (up || down) { this.cursor = (this.cursor + (up ? -1 : 1) + items.length) % items.length; this.actions.play('PSTOP'); return true; }
+    if (this.state === 'confirm' && (left || right)) { this.cursor = 1 - this.cursor; this.actions.play('PSTOP'); return true; }
+    if ((left || right) && it?.therm) { it.therm.set(clamp(it.therm.get() + (left ? -1 : 1), 0, it.therm.max)); return true; }
+    if ((left || right) && it?.adjust) { it.adjust(left ? -1 : 1); return true; }
+    if (enter && it?.act) { it.act(); return true; }
+    return true;
+  }
+
+  advanceHelp() {
+    this.actions.play('SWTCHN');
+    if (this.helpPage === 0) this.helpPage = 1; else this.back();
   }
 
   /** 마우스/터치: (x, y)는 320×200 화면 좌표. click 이면 선택까지 */
   pointer(x, y, click) {
     if (this.state === 'title') { if (click) this.key('Enter'); return; }
-    if (this.state === 'options' && y >= MAP_Y) {                   // 아래쪽 글자 줄: 맵 고르기 / 이동
-      const i = OPTION_ROWS.length + Math.floor((y - MAP_Y) / ROW_H);
-      if (x < THERM_X - 20 || x > 260 || i > START_ROW) return;
-      if (this.cursor !== i) { this.cursor = i; this.actions.play('PSTOP'); }
-      if (click) { if (i === MAP_ROW) this.cycleMap(1); else this.warpToMap(); }
-      return;
-    }
-    const rows = this.state === 'main' ? { y0: 64, h: 16, n: MAIN_ITEMS.length, x0: 90, x1: 240 }
-      : this.state === 'skill' ? { y0: 63, h: 16, n: SKILLS.length, x0: 40, x1: 260 }
-        : this.state === 'options' ? { y0: 38, h: 32, n: OPTION_ROWS.length, x0: 60, x1: 260 }
-          : this.state === 'load' || this.state === 'save' ? { y0: SLOT_Y, h: SLOT_H, n: this.slotList().length, x0: SLOT_X - 8, x1: SLOT_X + 200 } : null;
-    if (!rows || x < rows.x0 || x > rows.x1) return;
-    const i = Math.floor((y - rows.y0) / rows.h);
-    if (i < 0 || i >= rows.n) return;
+    if (this.state === 'help') { if (click) this.advanceHelp(); return; }
+    const L = this.layout();
+    if (L.back && x < BACK_W && y < BACK_H) { if (click) this.back(); return; }
+    const i = L.items.findIndex((it) => x >= it.rx0 && x <= it.rx1 && y >= it.y && y < it.y + it.h);
+    if (i < 0) return;
     if (this.cursor !== i) { this.cursor = i; this.actions.play('PSTOP'); }
     if (!click) return;
-    if (this.state === 'main') this.chooseMain();
-    else if (this.state === 'load' || this.state === 'save') this.chooseSlot();
-    else if (this.state === 'skill') { this.actions.play('PISTOL'); this.actions.newGame(i + 1); }
-    else if (this.state === 'options') {
-      // 온도계 막대를 직접 눌러 값 지정
-      const max = OPTION_ROWS[i].max, v = Math.round((x - THERM_X - 8) / 8);
-      if (y - rows.y0 - i * rows.h > 14) this.adjust(i, 0, Math.max(0, Math.min(max, v)));
-    }
+    const it = L.items[i];
+    if (it.therm) {                                                   // 온도계 막대를 직접 눌러 값 지정
+      if (y - it.y > 14) it.therm.set(clamp(Math.round((x - it.x - 8) / 8), 0, it.therm.max));
+    } else it.act?.();
   }
 
   // ---------- 그리기 ----------
   draw(frame, time) {
     const h = this.hud, p = (n) => h.patch(n);
     if (this.state === 'closed') return;
+    if (this.state === 'help') { h.blit(frame, p(this.helpPage ? 'HELP2' : 'HELP1'), 0, 0); return; }
 
     // 게임이 없을 때는 타이틀 그림이 배경
     if (!this.actions.hasGame() || this.state === 'title') h.blit(frame, p('TITLEPIC'), 0, 0);
@@ -174,38 +284,19 @@ export class Menu {
       return;
     }
 
+    const L = this.layout();
+    L.title(frame);
     const skull = p(Math.floor(time / 250) % 2 ? 'M_SKULL2' : 'M_SKULL1');
-    if (this.state === 'main') {
-      h.blit(frame, p('M_DOOM'), 94, 2);
-      MAIN_ITEMS.forEach((it, i) => h.blit(frame, p(it.patch), 97, 64 + 16 * i));
-      h.blit(frame, skull, 65, 64 + 16 * this.cursor - 5);
-    } else if (this.state === 'skill') {
-      h.blit(frame, p('M_NEWG'), 96, 14);
-      h.blit(frame, p('M_SKILL'), 54, 38);
-      SKILLS.forEach((n, i) => h.blit(frame, p(n), 48, 63 + 16 * i));
-      h.blit(frame, skull, 16, 63 + 16 * this.cursor - 5);
-    } else if (this.state === 'options') {
-      h.blit(frame, p('M_OPTTTL'), 108, 15);
-      OPTION_ROWS.forEach((r, i) => {
-        const y = 38 + 32 * i;
-        h.blit(frame, p(r.patch), THERM_X, y);
-        this.thermometer(frame, THERM_X, y + 16, r.max + 1, this.settings[r.key]);
-      });
-      this.dim(frame, THERM_X - 4, MAP_Y, THERM_X + 190, MAP_Y + 2 * ROW_H + 2);      // 타이틀 그림 위에서도 글자가 읽히게
-      const maps = this.actions.maps();
-      h.text(frame, `MAP  < ${maps[this.mapIdx] ?? '-'} >`, THERM_X, MAP_Y + 4);
-      h.text(frame, 'START MAP', THERM_X, MAP_Y + ROW_H + 4);
-      const skullY = this.cursor < MAP_ROW ? 38 + 32 * this.cursor : MAP_Y + ROW_H * (this.cursor - MAP_ROW);
-      h.blit(frame, skull, THERM_X - 32, skullY - 5);
-    } else if (this.state === 'load' || this.state === 'save') {
-      h.blit(frame, p(this.state === 'load' ? 'M_LOADG' : 'M_SAVEG'), 72, 28);
-      const names = this.actions.slotNames();
-      this.slotList().forEach((slot, i) => {
-        const y = SLOT_Y + SLOT_H * i;
-        this.slotBorder(frame, SLOT_X, y + 7);          // 원작처럼 테두리는 글자보다 7 아래에 그린다
-        h.text(frame, names[slot] ?? 'EMPTY SLOT', SLOT_X, y);
-      });
-      h.blit(frame, skull, SLOT_X - 32, SLOT_Y + SLOT_H * this.cursor - 5);
+    L.items.forEach((it, i) => {
+      if (it.patch) h.blit(frame, p(it.patch), it.x, it.y);
+      else if (it.text) h.text(frame, it.text, it.x, it.y + (it.h >= 16 ? 4 : 0));
+      if (it.extra) h.blit(frame, p(it.extra[0]), it.extra[1], it.y);
+      if (it.therm) this.thermometer(frame, it.x, it.y + 16, it.therm.max + 1, it.therm.get());
+      if (i === this.cursor) h.blit(frame, skull, it.skullX ?? L.skullX, it.y - (it.h >= 16 ? 5 : 4));
+    });
+    if (L.back) {
+      this.dim(frame, 2, 3, BACK_W - 4, BACK_H - 3);
+      h.text(frame, '< BACK', 7, 7);
     }
   }
 

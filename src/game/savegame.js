@@ -21,7 +21,7 @@ const MOBJ_FIELDS = [
 const PLAYER_FIELDS = [
   'x', 'y', 'z', 'angle', 'momx', 'momy', 'momz', 'floorz', 'ceilz', 'viewheight', 'deltaViewheight', 'bob', 'viewz',
   'health', 'armor', 'armorType', 'backpack', 'readyWeapon', 'pendingWeapon', 'attackDown', 'refire', 'bulletSlope',
-  'extraLight', 'grin', 'fireTics', 'damageCount', 'bonusCount', 'attackerAngle', 'dead', 'noclip', 'reaction', 'useHeld',
+  'extraLight', 'grin', 'fireTics', 'damageCount', 'bonusCount', 'attackerAngle', 'dead', 'noclip', 'god', 'reaction', 'useHeld',
 ];
 const copy = (o) => JSON.parse(JSON.stringify(o));
 

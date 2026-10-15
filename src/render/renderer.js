@@ -13,12 +13,14 @@ import { LINE_FLAGS } from '../wad/level.js';
 export const SCREEN_W = 320;
 export const SCREEN_H = 200;   // 화면 전체 (3D 뷰 + 하단 상태바)
 export const VIEW_H = 168;     // 3D 뷰 높이 (아래 32줄은 상태바)
-const W = SCREEN_W, H = VIEW_H;
-const HALF_W = W / 2, HALF_H = H / 2;
-const FOCAL = HALF_W;   // 90° FOV
+const SW = SCREEN_W;           // 화면 버퍼의 한 줄 길이
+// 지금 그리는 3D 뷰 창 (화면 크기 옵션에 따라 render() 때마다 바뀐다). 뷰 안의 좌표 (x, y) 는 화면 버퍼의 OFF + y * SW + x 에 놓인다.
+let W = SW, H = VIEW_H, OFF = 0;
+let HALF_W = W / 2, HALF_H = H / 2;
+let FOCAL = HALF_W;   // 90° FOV
+let SKY_SCALE = 1;    // 하늘 그림은 창이 좁아질수록 세로로도 늘어난다 (원작 pspriteiscale)
 const NEAR = 1;
 const SKY_FLAT = 'F_SKY1';
-const SKY_ROW_OFFSET = 100 - HALF_H; // 원작: 하늘은 화면 중앙(y=100) 기준으로 놓여, 상태바 모드에서는 16줄 아래가 보인다
 
 // ---------- 조명 테이블 (원작 r_main.c R_InitLightTables 와 동일한 식) ----------
 const LIGHTLEVELS = 16, MAXLIGHTSCALE = 48, MAXLIGHTZ = 128, NUMCOLORMAPS = 32;
@@ -41,6 +43,14 @@ const lightNum = (light, bias = 0) => {
 /** 손에 든 무기의 밝기: 섹터 조명 기준 가장 밝은 거리 구간 (원작 spritelights[MAXLIGHTSCALE-1]) */
 export const pspriteColormap = (light, extra = 0) => scaleLight[lightNum(light, extra)][MAXLIGHTSCALE - 1];
 
+/** 화면 크기 옵션(3~11) → 3D 뷰 창 (원작 R_SetViewSize). 10 = 상태바 위 전체, 11 = 상태바 없이 전체 화면 */
+export const viewWindow = (blocks) => {
+  blocks = Math.max(3, Math.min(11, blocks | 0));
+  if (blocks >= 10) return { blocks, x: 0, y: 0, w: SW, h: blocks === 11 ? SCREEN_H : VIEW_H };
+  const w = blocks * 32, h = Math.floor((blocks * VIEW_H) / 10) & ~7;
+  return { blocks, x: (SW - w) >> 1, y: (VIEW_H - h) >> 1, w, h };
+};
+
 /** 경계 y(실수) → 그 아래가 시작되는 행 번호 [0, H] */
 const bound = (y) => {
   const r = Math.ceil(y - 0.5);
@@ -54,11 +64,12 @@ export class Renderer {
     this.lit = gfx.palette.lit;
     this.textures = gfx.textures;
     this.sprites = gfx.sprites;
-    this.pixels = frame ?? new Uint32Array(W * SCREEN_H); // 화면 버퍼: 위쪽 W×VIEW_H 가 3D 뷰
-    this.depth = new Float32Array(W * H); // 픽셀별 시점 깊이 (스프라이트/투명 벽의 가림 판정용)
-    this.ceilClip = new Int16Array(W);   // 각 열에서 아직 안 그려진 첫 행
-    this.floorClip = new Int16Array(W);  // 각 열에서 아직 안 그려진 마지막 행 + 1
-    this.skyCols = new Int16Array(W);    // 열마다 하늘 텍스처의 열 번호
+    this.pixels = frame ?? new Uint32Array(SW * SCREEN_H); // 화면 버퍼: 3D 뷰는 window 가 가리키는 사각형
+    this.window = viewWindow(10);
+    this.depth = new Float32Array(SW * SCREEN_H); // 픽셀별 시점 깊이 (스프라이트/투명 벽의 가림 판정용): 뷰 안 좌표 y * W + x
+    this.ceilClip = new Int16Array(SW);   // 각 열에서 아직 안 그려진 첫 행
+    this.floorClip = new Int16Array(SW);  // 각 열에서 아직 안 그려진 마지막 행 + 1
+    this.skyCols = new Int16Array(SW);    // 열마다 하늘 텍스처의 열 번호
     this.masked = [];                    // 이번 프레임의 투명 중간 텍스처 벽
     this.fixed = -1;                     // 고정 컬러맵 (-1 = 거리/섹터 조명, 32 = 무적, 1 = 빛 증폭)
     this.openCols = W;
@@ -74,7 +85,13 @@ export class Renderer {
   /** 화면 색조 (PLAYPAL 번호: 피격 빨강, 아이템 금색 …) */
   setPalette(n) { this.lit = this.palette.litFor(n); }
 
+  /** 3D 뷰 크기 (화면 크기 옵션 3~11) */
+  setViewSize(blocks) { this.window = viewWindow(blocks); }
+
   render(level, view, mobjs = []) {
+    const win = this.window;
+    W = win.w; H = win.h; OFF = win.y * SW + win.x;
+    HALF_W = W / 2; HALF_H = H / 2; FOCAL = HALF_W; SKY_SCALE = SW / W;
     this.level = level;
     this.px = view.x; this.py = view.y; this.eyeZ = view.z;
     this.cos = Math.cos(view.angle); this.sin = Math.sin(view.angle);
@@ -275,9 +292,8 @@ export class Renderer {
     for (let y = y0; y < y1; y++, v += dv) {
       let r = Math.floor(v) % th;
       if (r < 0) r += th;
-      const i = y * W + x;
-      pixels[i] = lit[data[base + r]];
-      depth[i] = z;
+      pixels[OFF + y * SW + x] = lit[data[base + r]];
+      depth[y * W + x] = z;
     }
   }
 
@@ -289,7 +305,10 @@ export class Renderer {
       const st = this.sky;
       if (!st) return;
       const base = this.skyCols[x] * st.height, l0 = lit[this.fixed >= 0 ? this.fixed : 0], last = st.height - 1;
-      for (let y = y0; y < y1; y++) pixels[y * W + x] = l0[st.data[base + (y + SKY_ROW_OFFSET < last ? y + SKY_ROW_OFFSET : last)]];
+      for (let y = y0; y < y1; y++) {
+        const row = Math.floor(100 + (y - HALF_H) * SKY_SCALE);   // 원작: 하늘은 뷰 중앙이 그림의 100번째 줄
+        pixels[OFF + y * SW + x] = l0[st.data[base + (row < 0 ? 0 : row < last ? row : last)]];
+      }
       return;
     }
     const k = Math.abs(planeH - this.eyeZ) * FOCAL;
@@ -303,9 +322,8 @@ export class Renderer {
       const tx = Math.floor(px + z * dirX) & 63;
       const ty = Math.floor(-(py + z * dirY)) & 63;        // flat 의 y 는 월드 y 와 반대 방향
       const j = (z * 0.0625) | 0;
-      const i = y * W + x;
-      pixels[i] = lit[fixed >= 0 ? fixed : zl[j < MAXLIGHTZ ? j : MAXLIGHTZ - 1]][flat[(ty << 6) | tx]];
-      depth[i] = z;
+      pixels[OFF + y * SW + x] = lit[fixed >= 0 ? fixed : zl[j < MAXLIGHTZ ? j : MAXLIGHTZ - 1]][flat[(ty << 6) | tx]];
+      depth[y * W + x] = z;
     }
   }
 
@@ -373,13 +391,13 @@ export class Renderer {
         let r = Math.floor((y + 0.5 - yt) * inv);
         r = r < 0 ? 0 : r >= h ? h - 1 : r;
         if (!mask[base + r]) continue;
-        const i = y * W + x;
-        if (s.depth > depth[i] + 1) continue;     // 더 가까운 벽/바닥에 가려짐
+        if (s.depth > depth[y * W + x] + 1) continue;     // 더 가까운 벽/바닥에 가려짐
+        const pi = OFF + y * SW + x;
         if (s.fuzz) {                             // 부분 투명(스펙터): 주변 화면을 어둡게
-          const src = pixels[(y > 0 && ((x + y) & 1) ? i - W : i)];
-          pixels[i] = 0xff000000 | ((((src >> 16) & 255) * 0.55) << 16) | ((((src >> 8) & 255) * 0.55) << 8) | ((src & 255) * 0.55);
+          const src = pixels[(y > 0 && ((x + y) & 1) ? pi - SW : pi)];
+          pixels[pi] = 0xff000000 | ((((src >> 16) & 255) * 0.55) << 16) | ((((src >> 8) & 255) * 0.55) << 8) | ((src & 255) * 0.55);
         } else {
-          pixels[i] = table[data[base + r]];
+          pixels[pi] = table[data[base + r]];
         }
       }
     }
@@ -405,9 +423,8 @@ export class Renderer {
       for (let y = yTop; y < yBot; y++) {
         const r = Math.floor((y + 0.5 - yt) * inv);
         if (r < 0 || r >= th || !mask[base + r]) continue;
-        const i = y * W + x;
-        if (z > depth[i] + 1) continue;
-        pixels[i] = lit[data[base + r]];
+        if (z > depth[y * W + x] + 1) continue;
+        pixels[OFF + y * SW + x] = lit[data[base + r]];
       }
     }
   }

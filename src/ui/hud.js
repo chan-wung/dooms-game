@@ -1,4 +1,4 @@
-import { SCREEN_W as W, SCREEN_H, VIEW_H, pspriteColormap } from '../render/renderer.js';
+import { SCREEN_W as W, SCREEN_H, VIEW_H, pspriteColormap, viewWindow } from '../render/renderer.js';
 import { WEAPONS } from '../game/weapons.js';
 import { normAngle } from '../game/util.js';
 
@@ -80,24 +80,59 @@ export class Hud {
   }
 
   // ---------- 손에 든 무기 ----------
-  drawWeapon(frame, game, view) {
+  /** win: 3D 뷰 창 ({x, y, w, h}). 창이 좁으면 무기 그림도 같은 비율로 줄어든다 (원작 pspritescale) */
+  drawWeapon(frame, game, view, win = viewWindow(10)) {
     const p = game.player;
     const def = WEAPONS[p.readyWeapon];
     if (!def) return;
     const ps = p.psp.weapon;
     const lightCmap = view.colormap ?? pspriteColormap(p.sector.light, p.extraLight);
+    const scale = win.w / W;
     const place = (spriteName, frameIdx, bright) => {
       const f = this.sprites.frame(spriteName, frameIdx);
       if (!f) return;
       const tex = this.sprites.tex(f.rot[0].lump);
       // 원작: 화면 가운데(x=160) 기준, 세로는 BASEYCENTER(100) 기준이라 3D 뷰가 168줄일 때 16줄 위로 올라온다
-      const x = ps.sx - tex.leftOffset;
-      const y = VIEW_H / 2 - (100 + 0.5 - (ps.sy - tex.topOffset));
-      this.blit(frame, tex, x, y, bright ? 0 : lightCmap, VIEW_H, true);
+      const x = win.x + win.w / 2 + (ps.sx - W / 2 - tex.leftOffset) * scale;
+      const y = win.y + win.h / 2 - (100 + 0.5 - (ps.sy - tex.topOffset)) * scale;
+      this.blitScaled(frame, tex, x, y, scale, bright ? 0 : lightCmap, win);
     };
     place(def.sprite, ps.frame, ps.bright);
     const fl = p.psp.flash;
     if (fl && def.flashSprite) place(def.flashSprite, fl.frame, true); // 총구 화염은 항상 최대 밝기
+  }
+
+  /** 패치를 scale 배로 (x, y 는 화면 좌표, 오프셋 반영 끝) 그린다. 3D 뷰 창 밖은 자른다 */
+  blitScaled(frame, tex, x, y, scale, cmap, win) {
+    const table = this.lit[cmap], { width: w, height: h, data, mask } = tex;
+    const x0 = Math.round(x), y0 = Math.round(y);
+    const x1 = Math.round(x + w * scale), y1 = Math.round(y + h * scale);
+    const inv = 1 / scale;
+    for (let sx = Math.max(x0, win.x); sx < Math.min(x1, win.x + win.w); sx++) {
+      const c = Math.min(w - 1, Math.floor((sx - x0) * inv));
+      for (let sy = Math.max(y0, win.y); sy < Math.min(y1, win.y + win.h); sy++) {
+        const r = Math.min(h - 1, Math.floor((sy - y0) * inv));
+        if (mask[c * h + r]) frame[sy * W + sx] = table[data[c * h + r]];
+      }
+    }
+  }
+
+  /** 3D 뷰가 화면보다 작을 때의 바깥 테두리 (원작 R_FillBackScreen / R_DrawViewBorder) */
+  drawBorder(frame, win) {
+    if (win.w === W && win.y === 0) return;
+    const flat = this.textures.flat('FLOOR7_2'), table = this.lit[0];
+    const { x, y, w, h } = win;
+    for (let py = 0; py < VIEW_H; py++) {
+      const inside = py >= y && py < y + h;
+      for (let px = 0; px < W; px++) {
+        if (inside && px >= x && px < x + w) { px = x + w - 1; continue; }   // 3D 뷰가 그려진 곳은 건드리지 않는다
+        frame[py * W + px] = table[flat[((py & 63) << 6) | (px & 63)]];
+      }
+    }
+    const b = (name, bx, by) => this.blit(frame, this.patch(name), bx, by, 0, 200, true);
+    for (let i = 0; i < w; i += 8) { b('BRDR_T', x + i, y - 8); b('BRDR_B', x + i, y + h); }
+    for (let j = 0; j < h; j += 8) { b('BRDR_L', x - 8, y + j); b('BRDR_R', x + w, y + j); }
+    b('BRDR_TL', x - 8, y - 8); b('BRDR_TR', x + w, y - 8); b('BRDR_BL', x - 8, y + h); b('BRDR_BR', x + w, y + h);
   }
 
   // ---------- 상태바 ----------
@@ -152,7 +187,7 @@ export class Hud {
   faceName(game) {
     const p = game.player;
     if (p.dead) return 'STFDEAD0';
-    if (p.powers.invuln > 0) return 'STFGOD0';
+    if (p.god || p.powers.invuln > 0) return 'STFGOD0';
     const pain = Math.min(4, Math.floor(((100 - Math.min(p.health, 100)) * 5) / 101));
 
     if (game.hurtFace > 0 && p.attacker) {

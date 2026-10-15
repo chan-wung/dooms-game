@@ -4,7 +4,8 @@ import { saveWad, loadSavedWad } from './wad/store.js';
 import { Automap } from './ui/automap.js';
 import { Renderer, SCREEN_W, SCREEN_H } from './render/renderer.js';
 import { Screen } from './render/screen.js';
-import { loadPalette, tintPalette } from './gfx/palette.js';
+import { Wipe } from './render/wipe.js';
+import { loadPalette, tintPalette, GAMMA_LEVELS } from './gfx/palette.js';
 import { TextureStore } from './gfx/textures.js';
 import { SpriteStore } from './gfx/sprites.js';
 import { Hud } from './ui/hud.js';
@@ -19,6 +20,7 @@ import { Input } from './app/input.js';
 import { nextMapName } from './app/progress.js';
 import { loadSettings, saveSettings as storeSettings, readSlot, writeSlot, listSlots, slotName, lastSlot, setLastSlot } from './app/storage.js';
 import { saveGame, loadGame } from './game/savegame.js';
+import { CheatTyper, cheatChar, toggleGod, toggleNoclip, giveKfa, giveFa, togglePower, giveChainsaw, showPosition } from './game/cheats.js';
 
 const $ = (id) => document.getElementById(id);
 const $status = $('status'), $drop = $('drop'), $file = $('file');
@@ -32,7 +34,7 @@ const WAD_URL = '/wad/DOOM1.WAD';
 const TIC = 1 / TICRATE;
 
 // ---------- 설정 (브라우저에 기억) ----------
-const settings = loadSettings({ sfx: 12, music: 8, sens: 5, skill: 3 });
+const settings = loadSettings({ sfx: 12, music: 8, sens: 5, skill: 3, messages: 1, screenSize: 10, gamma: 0 });
 const saveSettings = () => storeSettings(settings);
 
 // ---------- 상태 ----------
@@ -42,7 +44,7 @@ let showAutomap = false;
 let acc = 0;
 const automap = new Automap($canvas);
 window.automap = automap; // 콘솔 디버깅용
-let renderer = null, screen = null, hud = null, menu = null, sound = null, music = null, touch = null, inter = null, finale = null;
+let gfxRef = null, renderer = null, screen = null, hud = null, menu = null, sound = null, music = null, touch = null, inter = null, finale = null;
 const screenBuf = new Uint32Array(SCREEN_W * SCREEN_H);  // 화면 버퍼 (3D 뷰 + 상태바 + 메뉴)
 const input = new Input();
 const keys = input.keys;
@@ -93,11 +95,40 @@ const startAudio = () => {
   if (sound.ensure()) { applySettings(); updateMusic(); }
 };
 
+/** 화면 쪽 옵션: 뷰 크기(화면 크기)와 밝기(감마) */
+const applyVideo = () => {
+  if (!renderer) return;
+  renderer.setViewSize(settings.screenSize);
+  gfxRef.palette.setGamma(settings.gamma);
+};
+
 const applySettings = () => {
-  if (!sound) return;
-  sound.setSfxVolume((settings.sfx / 15) * 0.9);
-  sound.setMusicVolume((settings.music / 15) * 0.8);
+  applyVideo();
+  if (sound) {
+    sound.setSfxVolume((settings.sfx / 15) * 0.9);
+    sound.setMusicVolume((settings.music / 15) * 0.8);
+  }
   saveSettings();
+};
+
+// ---------- 화면 녹는 전환 (맵 시작·점수 화면·타이틀로 갈 때) ----------
+const wipe = new Wipe();
+let wiping = false, wipeAcc = 0;
+/** 상태가 바뀌기 직전에 부른다: 지금 화면을 옛 화면으로 잡아 둔다 (오토맵은 캔버스라 제외) */
+const startWipe = () => {
+  if (showAutomap || !screen) return;
+  wipe.start(screenBuf);
+  wiping = true; wipeAcc = 0;
+};
+/** 새 화면이 그려진 뒤 호출: 전환 중이면 옛 화면을 덧그려 녹이고 화면에 올린다 */
+const present = (dt) => {
+  if (wiping) {
+    wipeAcc += dt;
+    while (wipeAcc >= TIC) { wipe.tick(); wipeAcc -= TIC; }
+    wipe.draw(screenBuf);
+    if (wipe.done) wiping = false;
+  }
+  screen.present();
 };
 
 // ---------- 저장 (맵을 시작할 때 슬롯 0 에 자동 저장: 그 맵을 이어받은 상태로 처음부터) ----------
@@ -113,6 +144,7 @@ const openMap = (name, carry = null, saved = null) => {
   try {
     const lvl = loadLevel(wad, name);
     const g = saved ? loadGame(lvl, saved.skill, saved.game) : new Game(lvl, settings.skill, 1, carry);
+    startWipe();
     level = lvl; game = g;
     levelStart = saved ? saved.levelStart : carry;
     if (!saved) writeAutoSave(name, settings.skill, game.player.exportState());
@@ -149,6 +181,7 @@ const openMenu = () => {
 };
 
 const quitToTitle = () => {
+  startWipe();
   game = null; level = null; appState = 'title';
   document.exitPointerLock?.();
   $overlay.hidden = true; $msg.textContent = '';
@@ -157,6 +190,41 @@ const quitToTitle = () => {
 };
 
 const canSave = () => appState === 'play' && !!game && !game.player.dead && !game.exited;
+
+// ---------- 치트 (키보드로 치는 것과 옵션 메뉴의 CHEATS 가 같은 함수) ----------
+const typer = new CheatTyper();
+let automapMode = 0;   // IDDT: 0 = 본 선만, 1 = 모든 선, 2 = 모든 선 + 물체
+
+const setAutomapMode = (mode) => {
+  automapMode = mode;
+  $flat.checked = automap.cheat = mode >= 1;
+  $things.checked = automap.showThings = mode >= 2;
+};
+
+/** 치트 실행. 메시지는 메뉴에서 눌러도 보이게 항상 띄운다 (say 의 두 번째 인자) */
+const runCheat = (name, arg) => {
+  if (!game || appState !== 'play') return false;
+  switch (name) {
+    case 'god': toggleGod(game); break;
+    case 'noclip': toggleNoclip(game); break;
+    case 'kfa': giveKfa(game); break;
+    case 'fa': giveFa(game); break;
+    case 'power': togglePower(game, arg); break;
+    case 'chainsaw': giveChainsaw(game); break;
+    case 'pos': showPosition(game); break;
+    case 'beholdHelp': game.say('inVuln, Str, Inviso, Rad, Allmap, or Light-amp', true); break;
+    case 'map':
+      setAutomapMode((automapMode + 1) % 3);
+      game.say(['Automap: normal', 'Automap: all lines', 'Automap: all lines and things'][automapMode], true);
+      break;
+    case 'warp':
+      if (wad.has(arg)) { menu.close(); openMap(arg, game.player.exportState()); game.say('Changing Level...', true); lockPointer(); }
+      break;
+    default: return false;
+  }
+  return true;
+};
+const cheatInfo = () => ({ god: !!game?.player.god, noclip: !!game?.player.noclip, automap: automapMode });
 
 /** 슬롯 n 에서 불러오기. 슬롯이 비었거나 맵을 못 열면 false */
 const loadSlot = (n) => {
@@ -168,14 +236,60 @@ const loadSlot = (n) => {
   return !!game;
 };
 
+const fullSave = (name) => ({ v: 2, kind: 'full', map: mapName, skill: game.skill, name, savedAt: Date.now(), levelStart, game: saveGame(game) });
+
 /** 지금 상태를 슬롯 n 에 저장 */
 const saveSlot = (n) => {
   if (!canSave()) return false;
-  const data = { v: 2, kind: 'full', map: mapName, skill: game.skill, name: slotName(mapName), savedAt: Date.now(), levelStart, game: saveGame(game) };
-  if (!writeSlot(n, data)) { game.say('SAVE FAILED'); return false; }
+  if (!writeSlot(n, fullSave(slotName(mapName)))) { game.say('SAVE FAILED', true); return false; }
   setLastSlot(n);
-  menu.close(); game.say('GAME SAVED.'); lockPointer();
+  menu.close(); game.say('GAME SAVED.', true); lockPointer();
   return true;
+};
+
+/** 앱을 떠날 때(전화·다른 앱·탭 닫힘) 지금 상태를 AUTO 슬롯에 남긴다: 브라우저가 페이지를 정리해도 CONTINUE 로 이어서 할 수 있다 */
+const autoSaveOnLeave = () => {
+  if (canSave()) writeSlot(0, fullSave(`${mapName}  AUTO`));
+};
+
+// ---------- 원작 F키 단축키 ----------
+/** 메뉴가 닫혀 있으면 열고 fn 실행 (게임 중이면 일시정지 메뉴가 열린다) */
+const withMenu = (fn) => { if (!menu) return; if (!menu.open) openMenu(); fn(); };
+const gammaText = () => (settings.gamma ? `Gamma correction level ${settings.gamma}` : 'Gamma correction OFF');
+const refuse = () => sound?.play('OOF');
+
+const toggleMessages = () => {
+  settings.messages = settings.messages ? 0 : 1;
+  applySettings();
+  game?.say(settings.messages ? 'Messages ON' : 'Messages OFF', true);
+};
+const cycleGamma = () => {
+  settings.gamma = (settings.gamma + 1) % GAMMA_LEVELS;
+  applySettings();
+  game?.say(gammaText(), true);
+};
+const changeScreenSize = (d) => {
+  if (menu?.open || !renderer || showAutomap) return;
+  settings.screenSize = Math.max(3, Math.min(11, settings.screenSize + d));
+  applySettings();
+};
+
+const FUNCTION_KEYS = {
+  F1: () => {
+    if (!menu) return;
+    const from = !menu.open ? 'closed' : menu.state === 'title' ? 'main' : menu.state;
+    if (!menu.open) openMenu();
+    menu.help(from);
+  },
+  F2: () => (canSave() ? withMenu(() => menu.show('save')) : refuse()),
+  F3: () => withMenu(() => menu.show('load')),
+  F4: () => withMenu(() => menu.show('sound')),
+  F7: () => (appState === 'play' && game
+    ? withMenu(() => menu.ask(['ARE YOU SURE YOU WANT TO', 'END THE GAME?'], quitToTitle, 'close')) : refuse()),
+  F8: () => (appState === 'play' ? toggleMessages() : refuse()),
+  F10: () => (appState === 'play' && game
+    ? withMenu(() => menu.ask(['QUIT TO THE TITLE SCREEN?', 'UNSAVED PROGRESS WILL BE LOST.'], quitToTitle, 'close')) : refuse()),
+  F11: cycleGamma,
 };
 
 const quickSave = () => { if (!menu.open && canSave()) saveSlot(lastSlot()); };
@@ -186,6 +300,10 @@ const startMenuActions = () => ({
   currentMap: () => (appState === 'play' ? mapName : null),
   warp: (name) => { menu.close(); openMap(name); lockPointer(); },
   hasGame: () => appState === 'play' && !!game,
+  hasAuto: () => !!readSlot(0),
+  resume: () => lockPointer(),
+  cheat: runCheat,
+  cheatInfo,
   canSave,
   slotNames: () => listSlots().map((s, n) => (s ? (n === 0 ? `AUTO  ${s.map}` : s.name) : null)),
   loadSlot,
@@ -201,6 +319,7 @@ const startWad = (buf, source, persist = false) => {
   try {
     wad = new Wad(buf);
     const gfx = { palette: loadPalette(wad), textures: new TextureStore(wad), sprites: new SpriteStore(wad) };
+    gfxRef = gfx;
     renderer = new Renderer(gfx, screenBuf);
     screen = new Screen($view, screenBuf);
     hud = new Hud(gfx, wad);
@@ -209,6 +328,7 @@ const startWad = (buf, source, persist = false) => {
     menu = new Menu(hud, startMenuActions(), settings);
     inter = new Intermission(hud, (name) => sound.play(name));
     finale = new Finale(hud);
+    applyVideo();
     window.gfx = gfx; window.sound = sound; window.music = music; window.menu = menu; window.settings = settings;
   } catch (err) {
     wad = null;
@@ -275,6 +395,11 @@ window.addEventListener('keydown', (e) => {
     if (menu && !e.repeat) { if (e.code === 'F6') quickSave(); else quickLoad(); }
     return;
   }
+  if (FUNCTION_KEYS[e.code] && wad && appState !== 'intermission' && appState !== 'finale') {   // 원작 F키 단축키
+    e.preventDefault();
+    if (!e.repeat) FUNCTION_KEYS[e.code]();
+    return;
+  }
   if (menu?.open) {                                // 메뉴가 열려 있으면 메뉴가 키를 받는다
     if (menu.key(e.code)) { e.preventDefault(); return; }
   }
@@ -286,14 +411,26 @@ window.addEventListener('keydown', (e) => {
   }
   if (!wad || appState !== 'play') return;
   if (e.code === 'Escape' && !e.repeat) { openMenu(); return; }
+  if (e.code === 'Pause' && !e.repeat) { openMenu(); return; }
+
+  // 치트 코드(IDDQD …)를 치는 중에는 그 글자들이 다른 단축키(R = 다시 시작 등)로 먹히지 않게 한다
+  const ch = cheatChar(e.code);
+  if (ch) {
+    if (e.repeat) { if (typer.active) return; }
+    else {
+      const hit = typer.feed(ch, performance.now());
+      if (hit) runCheat(hit.name, hit.arg);
+      if (hit || typer.active) return;
+    }
+  }
+
   keys[e.code] = true;
   if (e.repeat) return;
   if (e.code === 'Tab') setMode(!showAutomap);
   if (e.code === 'KeyR') { restartMap(); }
   const digit = /^Digit([1-7])$/.exec(e.code);
   if (digit && !showAutomap) input.weaponKey = Number(digit[1]);
-  if (e.code === 'KeyN' && game) { game.player.noclip = !game.player.noclip; game.say(game.player.noclip ? 'NOCLIP ON' : 'NOCLIP OFF'); }
-  if (e.code === 'KeyK' && game) { Object.assign(game.player.keys, { blue: true, yellow: true, red: true }); game.say('ALL KEYS'); }
+  if (e.code === 'Minus' || e.code === 'Equal') changeScreenSize(e.code === 'Equal' ? 1 : -1);
   if (showAutomap) {
     if (e.code === 'KeyF') toggle($follow);
     if (e.code === 'KeyT') toggle($things);
@@ -329,8 +466,11 @@ document.addEventListener('pointerlockchange', () => {
 
 // 탭을 떠나거나 앱을 전환하면 일시정지 메뉴 (돌아와 보니 죽어 있는 일이 없게)
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && appState === 'play' && menu && !menu.open) openMenu();
+  if (!document.hidden) return;
+  autoSaveOnLeave();                                  // 브라우저가 페이지를 정리해도 CONTINUE 로 이어갈 수 있게
+  if (appState === 'play' && menu && !menu.open) openMenu();
 });
+addEventListener('pagehide', autoSaveOnLeave);
 
 // 오토맵: 한 손가락/마우스 드래그 = 이동, 두 손가락 = 확대·축소(핀치), 마우스 휠 = 줌
 const mapPointers = new Map();   // pointerId → 마지막 위치
@@ -402,6 +542,7 @@ const restartMap = () => { openMap(mapName, game?.player.dead ? null : levelStar
 
 /** 출구를 밟았다: 에피소드 끝이면 엔딩, 아니면 점수 화면 */
 const beginIntermission = () => {
+  startWipe();
   const ex = game.exited, next = nextMapName(mapName, ex.secret);
   input.releaseAll(); setMode(false);
   document.exitPointerLock?.();
@@ -440,11 +581,11 @@ $stage.addEventListener('pointerdown', () => {
 // ---------- 오버레이 (사망 / 메시지) ----------
 const updateOverlay = () => {
   const p = game.player;
-  $msg.textContent = game.message;
+  $msg.textContent = settings.messages || game.messageForce ? game.message : '';
   if (menu.open) { $overlay.hidden = true; return; }
   if (p.dead) {
     $overlay.hidden = false;
-    $overlay.innerHTML = `<b>YOU DIED</b><br><br><span>${touch ? '화면을 탭' : 'R'}: 다시 시작</span>`;
+    $overlay.innerHTML = `<b>YOU DIED</b><br><br><span>${touch ? '화면 탭 또는 USE' : 'R 또는 E(USE)'}: 다시 시작</span>`;
     if (!endShownAt) endShownAt = performance.now();
   } else {
     $overlay.hidden = true;
@@ -466,7 +607,7 @@ const frame = (now) => {
 
   if (wad) {
     if (appState === 'play' && game) {
-      const p = game.player, paused = menu.open || !!touch?.helpOpen || (!!touch && portraitQuery.matches);   // 세로로 들고 있으면(가로 안내 중) 멈춤
+      const p = game.player, paused = wiping || menu.open || !!touch?.helpOpen || (!!touch && portraitQuery.matches);   // 세로로 들고 있으면(가로 안내 중) 멈춤
       sound.listener = { x: p.x, y: p.y, angle: p.angle };
       if (touch) input.mouseDX += touch.takeTurn(dt) * 1.4;              // 화면 드래그 = 마우스처럼
       if (input.mouseDX) { if (!p.dead && !game.exited && !paused) p.turnBy(-input.mouseDX * mouseSens()); input.mouseDX = 0; }
@@ -475,6 +616,7 @@ const frame = (now) => {
       if (paused) acc = 0; else acc += dt;
       while (acc >= TIC) { game.tick(input.buildCmd()); input.endTic(); acc -= TIC; }
       if (game.exited) { beginIntermission(); requestAnimationFrame(frame); return; }
+      if (p.respawn) { restartMap(); requestAnimationFrame(frame); return; }          // 죽은 뒤 USE
 
       if (showAutomap) {
         resizeAutomap();
@@ -483,11 +625,13 @@ const frame = (now) => {
       } else {
         const view = p.view(acc / TIC);
         setTint(tintPalette(p));
+        gfxRef.textures.animate(game.time);
         renderer.render(game.level, view, game.mobjs);
-        hud.drawWeapon(screenBuf, game, view);
-        hud.drawStatusBar(screenBuf, game);
+        hud.drawBorder(screenBuf, renderer.window);
+        hud.drawWeapon(screenBuf, game, view, renderer.window);
+        if (renderer.window.blocks < 11) hud.drawStatusBar(screenBuf, game);
         if (menu.open) menu.draw(screenBuf, now);
-        screen.present();
+        present(dt);
       }
       updateOverlay();
 
@@ -504,17 +648,17 @@ const frame = (now) => {
       }
     } else if (appState === 'intermission' || appState === 'finale') {
       const screenObj = appState === 'intermission' ? inter : finale;
-      acc += dt;
+      if (wiping) acc = 0; else acc += dt;
       while (acc >= TIC) { screenObj.tick(); acc -= TIC; }
       setTint(0);
       screenObj.draw(screenBuf);
-      screen.present();
+      present(dt);
       if (screenObj.done) { if (appState === 'finale') quitToTitle(); else nextMap(); }
     } else {
       // 타이틀 화면
       setTint(0);
       menu.draw(screenBuf, now);
-      screen.present();
+      present(dt);
     }
   }
   requestAnimationFrame(frame);

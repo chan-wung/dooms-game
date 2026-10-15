@@ -137,7 +137,8 @@ export class Game {
   playSound(name, src = null) { if (this.onSound) this.onSound(name, src); }
 
   add(thinker) { this.thinkers.push(thinker); return thinker; }
-  say(text) { this.message = text; this.messageTics = 3 * TICRATE; }
+  /** 화면 위쪽 메시지. force = 메시지 끄기(옵션)를 무시하고 항상 보여준다 (저장·치트·설정 변경 알림) */
+  say(text, force = false) { this.message = text; this.messageForce = force; this.messageTics = 3 * TICRATE; }
   exitLevel(secret) { if (!this.exited) this.exited = { secret, time: this.time }; }
 
   /** 이 섹터가 움직여서 플레이어가 끼는가 (true = 끼어서 움직일 수 없음) */
