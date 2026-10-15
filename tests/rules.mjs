@@ -5,6 +5,7 @@ import { Game } from '../src/game/game.js';
 import { killMobj } from '../src/game/combat.js';
 import { saveGame, loadGame } from '../src/game/savegame.js';
 import { loadPalette, tintPalette } from '../src/gfx/palette.js';
+import { Intermission, Finale } from '../src/ui/intermission.js';
 
 const b = fs.readFileSync(new URL('../public/wad/DOOM1.WAD', import.meta.url));
 const wad = new Wad(b.buffer.slice(b.byteOffset, b.byteOffset + b.length));
@@ -52,6 +53,34 @@ for (const [skill, expectRespawn] of [[5, true], [3, false]]) {
   tick(g, 8000);
   const reborn = g.mobjs.find((m) => m !== z && m.type === 3004 && m.spawnX === sx && m.spawnY === sy && m.health > 0);
   ok(`skill ${skill}: 시간이 지나면 ${expectRespawn ? '부활' : '그대로 시체'}`, expectRespawn ? !!reborn && z.removed : !reborn && !z.removed);
+}
+
+// ---------- 점수 화면 (원작 wi_stuff 규칙) ----------
+{
+  const stub = { width: 12, height: 14, leftOffset: 0, topOffset: 0 };
+  const hud = { patch: () => stub, blit() {}, text() {}, drawFlat() {} };
+  const sounds = [];
+  const info = { map: 'E1M3', next: 'E1M4', secretExit: false, time: 35 * 125, kills: 15, killsTotal: 20, items: 5, itemsTotal: 5, secrets: 0, secretsTotal: 3 };
+  const inter = new Intermission(hud, (n) => sounds.push(n));
+  inter.start(info);
+  const run = (n) => { for (let i = 0; i < n; i++) { inter.tick(); inter.draw(new Uint32Array(320 * 200)); } };
+  run(34); ok('점수: 시작 후 1초는 숫자가 안 올라감', inter.cnt.kills === -1);
+  run(200);
+  ok('점수: 시간이 지나면 킬 75% / 아이템 100% / 비밀 0%', inter.cnt.kills === 75 && inter.cnt.items === 100 && inter.cnt.secret === 0, JSON.stringify(inter.cnt));
+  run(400);
+  ok('점수: 시간 2:05, 기준 시간 1:30 까지 올라가고 멈춤', inter.cnt.time === 125 && inter.cnt.par === 120 && inter.sp === 10, `(${inter.cnt.time}, ${inter.cnt.par}, sp ${inter.sp})`);
+  ok('점수: 올라가는 동안 총소리, 끝날 때마다 폭발음', sounds.includes('PISTOL') && sounds.filter((s) => s === 'BAREXP').length === 4, `(${sounds.filter((s) => s === 'BAREXP').length}회)`);
+  run(500); ok('점수: 키를 누르기 전에는 계속 머문다', inter.state === 'stats' && !inter.done);
+  inter.press(); run(1); ok('점수: 키 → 다음 맵 화면', inter.state === 'next');
+  run(150); ok('점수: 다음 맵 화면은 4초 뒤 저절로 끝남', inter.done);
+
+  const fast = new Intermission(hud, () => {}); fast.start(info);
+  fast.press(); fast.tick();
+  ok('점수: 중간에 키를 누르면 바로 최종 숫자', fast.cnt.kills === 75 && fast.cnt.time === 125 && fast.sp === 10);
+  const fin = new Finale(hud); fin.start();
+  fin.press(); ok('엔딩: 첫 키는 글자를 한꺼번에 보여줌', fin.stage === 0 && fin.count > 100);
+  fin.press(); ok('엔딩: 다음 키는 HELP2 화면', fin.stage === 1);
+  fin.press(); ok('엔딩: 마지막 키는 끝', fin.done);
 }
 
 // ---------- 화면 색조 (원작 팔레트 번호) ----------

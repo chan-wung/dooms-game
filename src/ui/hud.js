@@ -1,4 +1,4 @@
-import { SCREEN_W as W, VIEW_H, pspriteColormap } from '../render/renderer.js';
+import { SCREEN_W as W, SCREEN_H, VIEW_H, pspriteColormap } from '../render/renderer.js';
 import { WEAPONS } from '../game/weapons.js';
 import { normAngle } from '../game/util.js';
 
@@ -16,11 +16,18 @@ export class Hud {
     this.wad = wad;
     this.sprites = gfx.sprites;
     this.palette = gfx.palette;
+    this.textures = gfx.textures;
     this.lit = gfx.palette.lit;
     this.cache = new Map();
   }
 
   setPalette(n) { this.lit = this.palette.litFor(n); }
+
+  /** 64×64 flat 을 화면 전체에 타일처럼 깐다 (엔딩 화면 배경) */
+  drawFlat(frame, name) {
+    const flat = this.textures.flat(name), table = this.lit[0];
+    for (let y = 0; y < SCREEN_H; y++) for (let x = 0; x < W; x++) frame[y * W + x] = table[flat[((y & 63) << 6) | (x & 63)]];
+  }
 
   /** 이름으로 그래픽(패치) 얻기 (없으면 null) */
   patch(name) {

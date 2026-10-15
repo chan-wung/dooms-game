@@ -8,6 +8,7 @@ import { loadPalette, tintPalette } from './gfx/palette.js';
 import { TextureStore } from './gfx/textures.js';
 import { SpriteStore } from './gfx/sprites.js';
 import { Hud } from './ui/hud.js';
+import { Intermission, Finale } from './ui/intermission.js';
 import { Menu } from './ui/menu.js';
 import { TouchControls, isTouchDevice } from './ui/touch.js';
 import { SoundSystem } from './audio/sound.js';
@@ -36,11 +37,11 @@ const saveSettings = () => storeSettings(settings);
 
 // ---------- 상태 ----------
 let wad = null, level = null, game = null, mapName = null;
-let appState = 'title';           // 'title' | 'play'
+let appState = 'title';           // 'title' | 'play' | 'intermission' (통계 화면) | 'finale' (에피소드 엔딩)
 let showAutomap = false;
 let acc = 0;
 const automap = new Automap($canvas);
-let renderer = null, screen = null, hud = null, menu = null, sound = null, music = null, touch = null;
+let renderer = null, screen = null, hud = null, menu = null, sound = null, music = null, touch = null, inter = null, finale = null;
 const screenBuf = new Uint32Array(SCREEN_W * SCREEN_H);  // 화면 버퍼 (3D 뷰 + 상태바 + 메뉴)
 const input = new Input();
 const keys = input.keys;
@@ -69,8 +70,9 @@ let currentSong = null;
 
 /** 지금 상황에 맞는 곡: 타이틀 / 결과 화면 / 에피소드 클리어 / 맵 */
 const songFor = () => {
+  if (appState === 'intermission') return 'D_INTER';
+  if (appState === 'finale') return 'D_VICTOR';
   if (appState === 'title' || !game) return 'D_INTRO';
-  if (game.exited) return nextMapName(mapName, game.exited.secret) ? 'D_INTER' : 'D_VICTOR';
   return `D_${mapName}`;
 };
 
@@ -198,6 +200,8 @@ const startWad = (buf, source, persist = false) => {
     sound = new SoundSystem(wad);
     music = new MusicPlayer(() => (sound.ensure() ? { ctx: sound.ctx, bus: sound.musicBus } : null));
     menu = new Menu(hud, startMenuActions(), settings);
+    inter = new Intermission(hud, (name) => sound.play(name));
+    finale = new Finale(hud);
     window.gfx = gfx; window.sound = sound; window.music = music; window.menu = menu; window.settings = settings;
   } catch (err) {
     wad = null;
@@ -268,13 +272,17 @@ window.addEventListener('keydown', (e) => {
     if (menu.key(e.code)) { e.preventDefault(); return; }
   }
   if (e.code.startsWith('Arrow') || e.code === 'Tab' || e.code === 'Space') e.preventDefault();
+  if (wad && (appState === 'intermission' || appState === 'finale')) {       // 결과/엔딩 화면: 키로 진행
+    if (!e.repeat && ['Enter', 'Space', 'KeyE', 'ControlLeft', 'ControlRight', 'KeyF'].includes(e.code)) pressScreen();
+    else if (e.code === 'KeyR' && appState === 'intermission') restartMap();
+    return;
+  }
   if (!wad || appState !== 'play') return;
   if (e.code === 'Escape' && !e.repeat) { openMenu(); return; }
   keys[e.code] = true;
   if (e.repeat) return;
   if (e.code === 'Tab') setMode(!showAutomap);
   if (e.code === 'KeyR') { restartMap(); }
-  if (e.code === 'Enter' && game?.exited) nextMap();
   const digit = /^Digit([1-7])$/.exec(e.code);
   if (digit && !showAutomap) input.weaponKey = Number(digit[1]);
   if (e.code === 'KeyN' && game) { game.player.noclip = !game.player.noclip; game.say(game.player.noclip ? 'NOCLIP ON' : 'NOCLIP OFF'); }
@@ -298,6 +306,7 @@ $view.addEventListener('pointermove', (e) => { if (menu?.open) menu.pointer(...t
 $view.addEventListener('click', (e) => {
   startAudio();
   if (menu?.open) { menu.pointer(...toScreen(e), true); return; }
+  if (appState === 'intermission' || appState === 'finale') { pressScreen(); return; }
   if (appState === 'play') lockPointer();
 });
 $view.addEventListener('mousedown', (e) => { if (e.button === 0 && document.pointerLockElement === $view) input.mouseFire = true; });
@@ -353,38 +362,57 @@ if (isTouchDevice()) {
 
 // 다시 하기: 죽었으면 권총 시작, 아니면 이 맵을 시작했을 때의 상태로
 const restartMap = () => { openMap(mapName, game?.player.dead ? null : levelStart); lockPointer(); };
+
+/** 출구를 밟았다: 에피소드 끝이면 엔딩, 아니면 점수 화면 */
+const beginIntermission = () => {
+  const ex = game.exited, next = nextMapName(mapName, ex.secret);
+  input.releaseAll(); setMode(false);
+  document.exitPointerLock?.();
+  $overlay.hidden = true; $msg.textContent = '';
+  acc = 0;
+  if (!next) { finale.start(); appState = 'finale'; }                  // 원작: 에피소드 마지막 맵은 점수 화면 없이 바로 엔딩
+  else {
+    inter.start({
+      map: mapName, next, secretExit: ex.secret, time: ex.time,
+      kills: game.killsFound, killsTotal: game.killsTotal, items: game.itemsFound, itemsTotal: game.itemsTotal,
+      secrets: game.secretsFound, secretsTotal: game.secretsTotal,
+    });
+    appState = 'intermission';
+  }
+  updateMusic();
+};
+
 const nextMap = () => {
   const next = nextMapName(mapName, game.exited.secret);
   if (next && wad.has(next)) { openMap(next, game.player.exportState()); lockPointer(); }
+  else quitToTitle();
 };
 
-// 모바일: 결과/사망 화면에서 탭으로 진행 (Enter/R 이 없으므로)
+/** 점수/엔딩 화면에서 키·탭: 진행 */
+const pressScreen = () => { if (appState === 'intermission') inter.press(); else if (appState === 'finale') finale.press(); };
+
+// 모바일: 사망 화면에서 탭으로 다시 시작 (R 키가 없으므로)
 let endShownAt = 0;
 $stage.addEventListener('pointerdown', () => {
-  if (!touch || appState !== 'play' || !game || menu.open || !endShownAt || performance.now() - endShownAt < 800) return;
-  if (game.exited) { if (nextMapName(mapName, game.exited.secret)) nextMap(); else restartMap(); }
-  else if (game.player.dead) restartMap();
+  if (!touch) return;
+  if (appState === 'intermission' || appState === 'finale') { pressScreen(); return; }
+  if (appState !== 'play' || !game || menu.open || !endShownAt || performance.now() - endShownAt < 800) return;
+  if (game.player.dead) restartMap();
 });
 
-// ---------- 오버레이 (출구 / 사망 / 메시지) ----------
-const mmss = (tics) => `${Math.floor(tics / TICRATE / 60)}:${String(Math.floor(tics / TICRATE) % 60).padStart(2, '0')}`;
+// ---------- 오버레이 (사망 / 메시지) ----------
 const updateOverlay = () => {
   const p = game.player;
   $msg.textContent = game.message;
   if (menu.open) { $overlay.hidden = true; return; }
-  if (game.exited) {
-    const next = nextMapName(mapName, game.exited.secret);
-    $overlay.hidden = false;
-    $overlay.innerHTML =
-      `<b>${mapName} 완료</b><br>시간 ${mmss(game.exited.time)}<br>킬 ${game.killsFound}/${game.killsTotal} · 아이템 ${game.itemsFound}/${game.itemsTotal} · 비밀 ${game.secretsFound}/${game.secretsTotal}<br><br>` +
-      (next ? `<span>${touch ? '화면을 탭' : 'Enter'}: ${next} 로 이동</span>` : '<span>THE END — 에피소드 클리어!</span>') + `<br><span>${touch ? (next ? '' : '화면을 탭: 다시 하기') : 'R: 다시 하기'}</span>`;
-  } else if (p.dead) {
+  if (p.dead) {
     $overlay.hidden = false;
     $overlay.innerHTML = `<b>YOU DIED</b><br><br><span>${touch ? '화면을 탭' : 'R'}: 다시 시작</span>`;
+    if (!endShownAt) endShownAt = performance.now();
   } else {
     $overlay.hidden = true;
+    endShownAt = 0;
   }
-  if (game.exited || p.dead) { if (!endShownAt) endShownAt = performance.now(); } else endShownAt = 0;
 };
 
 // ---------- 화면 색조 (피격 빨강 · 아이템 금색 · 방사능복 초록: 원작 PLAYPAL 팔레트 교체) ----------
@@ -397,7 +425,7 @@ const frame = (now) => {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   fps += (1 / Math.max(dt, 0.001) - fps) * 0.05;
-  if (touch) touch.show(!menu?.open);   // 메뉴가 열려 있으면 터치 오버레이가 화면 탭을 가로채지 않게 숨김
+  if (touch) touch.show(appState === 'play' && !menu?.open);   // 메뉴·결과 화면에서는 터치 오버레이가 화면 탭을 가로채지 않게 숨김
 
   if (wad) {
     if (appState === 'play' && game) {
@@ -409,7 +437,7 @@ const frame = (now) => {
       // 로직은 35Hz 고정 tic, 화면은 매 프레임 (tic 사이는 위치 보간). 메뉴가 열려 있으면 정지
       if (paused) acc = 0; else acc += dt;
       while (acc >= TIC) { game.tick(input.buildCmd()); input.endTic(); acc -= TIC; }
-      if (songFor() !== currentSong) updateMusic();                    // 결과 화면/승리 음악 전환
+      if (game.exited) { beginIntermission(); requestAnimationFrame(frame); return; }
 
       if (showAutomap) {
         resizeAutomap();
@@ -437,6 +465,14 @@ const frame = (now) => {
           `위치 (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) 바닥 ${p.sector.floorHeight}` +
           `${p.noclip ? ' · NOCLIP' : ''}${p.powers.invuln > 0 ? ' · 무적' : ''}${p.powers.radsuit > 0 ? ' · 방사능복' : ''}`;
       }
+    } else if (appState === 'intermission' || appState === 'finale') {
+      const screenObj = appState === 'intermission' ? inter : finale;
+      acc += dt;
+      while (acc >= TIC) { screenObj.tick(); acc -= TIC; }
+      setTint(0);
+      screenObj.draw(screenBuf);
+      screen.present();
+      if (screenObj.done) { if (appState === 'finale') quitToTitle(); else nextMap(); }
     } else {
       // 타이틀 화면
       setTint(0);
