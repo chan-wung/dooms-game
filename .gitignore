@@ -4,3 +4,6 @@ dist
 *.wad
 .idea
 *.stackdump
+
+# 참고 스크린샷
+참고자료/
