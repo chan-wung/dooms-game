@@ -8,6 +8,7 @@ export const isTouchDevice = () =>
   || 'ontouchstart' in window;
 
 const STICK_RADIUS = 56;
+const TURN_BUTTON_PX_PER_SEC = 450; // 회전 버튼을 누르고 있을 때의 드래그 환산 속도
 
 /** 포인터 캡처(손가락이 요소 밖으로 나가도 계속 추적). 일부 환경에서 실패해도 조작은 계속되게 */
 const capture = (el, id) => { try { el.setPointerCapture(id); } catch { /* 무시 */ } };
@@ -30,6 +31,8 @@ export class TouchControls {
       <button class="t-btn t-fire">FIRE</button>
       <button class="t-btn t-use">USE</button>
       <button class="t-btn t-weapon">GUN</button>
+      <button class="t-btn t-tl">◀</button>
+      <button class="t-btn t-tr">▶</button>
       <button class="t-small t-menu">MENU</button>
       <button class="t-small t-map">MAP</button>`;
     root.appendChild(el);
@@ -40,6 +43,9 @@ export class TouchControls {
     this.bindHold(el.querySelector('.t-fire'), (on) => { this.fire = on; });
     this.bindHold(el.querySelector('.t-use'), (on) => { if (on) this.useQueued = true; });
     this.bindHold(el.querySelector('.t-weapon'), (on) => { if (on) this.cycleQueued = 1; });
+    this.turnDir = 0;             // 좌우 회전 버튼: -1 왼쪽, 1 오른쪽
+    this.bindHold(el.querySelector('.t-tl'), (on) => { this.turnDir = on ? -1 : (this.turnDir === -1 ? 0 : this.turnDir); });
+    this.bindHold(el.querySelector('.t-tr'), (on) => { this.turnDir = on ? 1 : (this.turnDir === 1 ? 0 : this.turnDir); });
     this.bindHold(el.querySelector('.t-menu'), (on) => { if (on) handlers.menu(); });
     this.bindHold(el.querySelector('.t-map'), (on) => { if (on) handlers.map(); });
   }
@@ -93,7 +99,7 @@ export class TouchControls {
   }
 
   /** 프레임마다: 쌓인 회전량을 꺼내 간다 */
-  takeTurn() { const d = this.turnDx; this.turnDx = 0; return d; }
+  takeTurn(dt = 0.016) { const d = this.turnDx + this.turnDir * TURN_BUTTON_PX_PER_SEC * dt; this.turnDx = 0; return d; }
   /** tic 마다: 한 번만 처리할 입력을 꺼내 간다 */
   takeQueued() {
     const q = { use: this.useQueued, cycle: this.cycleQueued };

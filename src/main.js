@@ -379,7 +379,7 @@ const frame = (now) => {
     if (appState === 'play' && game) {
       const p = game.player, paused = menu.open;
       sound.listener = { x: p.x, y: p.y, angle: p.angle };
-      if (touch) mouseDX += touch.takeTurn() * 1.4;                    // 화면 드래그 = 마우스처럼
+      if (touch) mouseDX += touch.takeTurn(dt) * 1.4;                    // 화면 드래그 = 마우스처럼
       if (mouseDX) { if (!p.dead && !game.exited && !paused) p.turnBy(-mouseDX * mouseSens()); mouseDX = 0; }
 
       // 로직은 35Hz 고정 tic, 화면은 매 프레임 (tic 사이는 위치 보간). 메뉴가 열려 있으면 정지
