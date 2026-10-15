@@ -1,5 +1,6 @@
 import { Wad } from './wad/wad.js';
 import { loadLevel } from './wad/level.js';
+import { saveWad, loadSavedWad } from './wad/store.js';
 import { Automap } from './ui/automap.js';
 import { Renderer, SCREEN_W, SCREEN_H } from './render/renderer.js';
 import { Screen } from './render/screen.js';
@@ -7,6 +8,10 @@ import { loadPalette } from './gfx/palette.js';
 import { TextureStore } from './gfx/textures.js';
 import { SpriteStore } from './gfx/sprites.js';
 import { Hud } from './ui/hud.js';
+import { Menu } from './ui/menu.js';
+import { TouchControls, isTouchDevice } from './ui/touch.js';
+import { SoundSystem } from './audio/sound.js';
+import { MusicPlayer, parseMus } from './audio/music.js';
 import { Game, TICRATE } from './game/game.js';
 import { MOUSE_SENS } from './game/player.js';
 
@@ -15,21 +20,31 @@ const $status = $('status'), $drop = $('drop'), $file = $('file');
 const $bar = $('bar'), $stage = $('stage'), $help = $('help'), $hud = $('hud');
 const $view = $('view'), $canvas = $('automap'), $mapSel = $('mapSel'), $mapOpts = $('mapOpts');
 const $follow = $('optFollow'), $flat = $('optFlat'), $things = $('optThings'), $mode = $('btnMode');
+const $sfx = $('optSfx'), $music = $('optMusic');
 const $msg = $('msg'), $overlay = $('overlay'), $hurt = $('hurt');
 
 const WAD_URL = '/wad/DOOM1.WAD';
 const TIC = 1 / TICRATE;
 const TURN_UNIT = (Math.PI * 2) / 65536; // 원작 각도 단위 → 라디안
 
+// ---------- 설정 (브라우저에 기억) ----------
+const SETTINGS_KEY = 'doomjs.settings';
+const settings = { sfx: 12, music: 8, sens: 5, skill: 3 };
+try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch { /* 저장소 사용 불가: 기본값 */ }
+const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* 무시 */ } };
+
+// ---------- 상태 ----------
 let wad = null, level = null, game = null, mapName = null;
+let appState = 'title';           // 'title' | 'play'
 let showAutomap = false;
 let mouseDX = 0, acc = 0;
 const automap = new Automap($canvas);
-let renderer = null, screen = null, hud = null; // WAD 로드 후 생성 (팔레트/텍스처 필요)
-const screenBuf = new Uint32Array(SCREEN_W * SCREEN_H);  // 화면 버퍼 (3D 뷰 + 상태바)
+let renderer = null, screen = null, hud = null, menu = null, sound = null, music = null, touch = null;
+const screenBuf = new Uint32Array(SCREEN_W * SCREEN_H);  // 화면 버퍼 (3D 뷰 + 상태바 + 메뉴)
 let weaponKey = 0, mouseFire = false, wheel = 0;     // 다음 tic 에 처리할 입력
 const keys = Object.create(null);
 window.keys = keys; // 콘솔 디버깅용
+const mouseSens = () => MOUSE_SENS * (0.5 + settings.sens * 0.1);
 
 // ---------- 캔버스 크기 (오토맵, DPR 반영) ----------
 const resizeAutomap = () => {
@@ -44,7 +59,40 @@ const setMode = (automapOn) => {
   $canvas.hidden = !automapOn;
   $mapOpts.hidden = !automapOn;
   $mode.textContent = automapOn ? '3D 화면 (Tab)' : '오토맵 (Tab)';
-  if (automapOn) { document.exitPointerLock?.(); resizeAutomap(); automap.fit(); }
+  if (automapOn) { skipUnlockPause = true; document.exitPointerLock?.(); resizeAutomap(); automap.fit(); }
+};
+
+// ---------- 소리 / 음악 ----------
+const songs = new Map(); // 곡 이름 → 파싱 결과 (한 번만 파싱)
+let currentSong = null;
+
+/** 지금 상황에 맞는 곡: 타이틀 / 결과 화면 / 에피소드 클리어 / 맵 */
+const songFor = () => {
+  if (appState === 'title' || !game) return 'D_INTRO';
+  if (game.exited) return nextMapName(mapName, game.exited.secret) ? 'D_INTER' : 'D_VICTOR';
+  return `D_${mapName}`;
+};
+
+const updateMusic = () => {
+  if (!wad || !music) return;
+  const name = songFor();
+  if (!wad.has(name)) return;
+  currentSong = name;
+  if (!songs.has(name)) songs.set(name, parseMus(wad.getLump(name)));
+  music.play(songs.get(name), name);
+};
+
+/** 브라우저는 사용자 입력 뒤에만 소리를 허용하므로, 첫 키/클릭에서 오디오를 연다 */
+const startAudio = () => {
+  if (!sound || sound.ctx) { sound?.ensure(); return; }
+  if (sound.ensure()) { applySettings(); updateMusic(); }
+};
+
+const applySettings = () => {
+  if (!sound) return;
+  sound.setSfxVolume((settings.sfx / 15) * 0.9);
+  sound.setMusicVolume((settings.music / 15) * 0.8);
+  saveSettings();
 };
 
 // ---------- 레벨 진행 ----------
@@ -63,31 +111,66 @@ const nextMapName = (name, secret) => {
 const openMap = (name) => {
   try {
     level = loadLevel(wad, name);
-    game = new Game(level);
+    game = new Game(level, settings.skill);
+    game.onSound = (snd, src) => sound.play(snd, src);
     mapName = name;
+    appState = 'play';
     automap.setLevel(level, game.player);
     window.level = level; window.game = game; window.player = game.player; // 콘솔 디버깅용
     $mapSel.value = name;
     $overlay.hidden = true;
     acc = 0;
     $status.textContent =
-      `${name} — 정점 ${level.vertexes.length} · 선 ${level.linedefs.length} · 섹터 ${level.sectors.length} · ` +
+      `${name} — 난이도 ${settings.skill} · 정점 ${level.vertexes.length} · 선 ${level.linedefs.length} · 섹터 ${level.sectors.length} · ` +
       `things ${level.things.length} (표시 ${game.mobjs.length}) · segs ${level.segs.length} · 서브섹터 ${level.subsectors.length} · 노드 ${level.nodes.length}`;
     if (game.unknownThings.size) console.warn('아직 모르는 thing 종류:', Object.fromEntries(game.unknownThings));
+    updateMusic();
   } catch (err) {
     $status.textContent = `${name} 로드 실패: ${err.message}`;
     console.error(err);
   }
 };
 
-const startWad = (buf, source) => {
+// ---------- 메뉴 연결 ----------
+const lockPointer = () => { if (!touch && document.pointerLockElement !== $view) $view.requestPointerLock?.(); };
+
+const openMenu = () => {
+  if (!menu || menu.open) return;
+  for (const k in keys) delete keys[k];     // 눌려 있던 키가 메뉴 뒤에서 계속 먹지 않게
+  mouseFire = false;
+  setMode(false);
+  menu.show('main');
+  document.exitPointerLock?.();
+};
+
+const quitToTitle = () => {
+  game = null; level = null; appState = 'title';
+  document.exitPointerLock?.();
+  $overlay.hidden = true; $msg.textContent = ''; $hurt.style.opacity = '0';
+  menu.show('title');
+  updateMusic();
+};
+
+const startMenuActions = () => ({
+  hasGame: () => appState === 'play' && !!game,
+  newGame: (skill) => { settings.skill = skill; saveSettings(); menu.close(); openMap('E1M1'); lockPointer(); },
+  quitToTitle,
+  settingsChanged: applySettings,
+  play: (name) => sound.play(name),
+});
+
+// ---------- WAD 로딩 ----------
+const startWad = (buf, source, persist = false) => {
   try {
     wad = new Wad(buf);
     const gfx = { palette: loadPalette(wad), textures: new TextureStore(wad), sprites: new SpriteStore(wad) };
     renderer = new Renderer(gfx, screenBuf);
     screen = new Screen($view, screenBuf);
     hud = new Hud(gfx, wad);
-    window.gfx = gfx;
+    sound = new SoundSystem(wad);
+    music = new MusicPlayer(() => (sound.ensure() ? { ctx: sound.ctx, bus: sound.musicBus } : null));
+    menu = new Menu(hud, startMenuActions(), settings);
+    window.gfx = gfx; window.sound = sound; window.music = music; window.menu = menu; window.settings = settings;
   } catch (err) {
     wad = null;
     $status.textContent = `WAD 로딩 실패: ${err.message}`;
@@ -97,14 +180,17 @@ const startWad = (buf, source) => {
   window.wad = wad;
   const maps = wad.getMapNames();
   if (!maps.length) { $status.textContent = `${source}: 맵이 없는 WAD입니다.`; return; }
+  if (persist) saveWad(buf, source);   // 다음에 다시 고르지 않아도 되게 브라우저에 보관
   $drop.hidden = true;
   $bar.hidden = $stage.hidden = $help.hidden = false;
-  $mapSel.replaceChildren(...maps.map((m) => new Option(m, m)));
+  $mapSel.replaceChildren(new Option('맵 선택…', ''), ...maps.map((m) => new Option(m, m)));
   setMode(false);
-  openMap(maps.includes('E1M1') ? 'E1M1' : maps[0]);
+  appState = 'title';
+  menu.show('title');
+  $status.textContent = `${source} 로드 완료 — 아무 키나 눌러 시작하세요.`;
+  updateMusic();
 };
 
-// ---------- WAD 로딩 ----------
 const fetchDefault = async () => {
   try {
     const res = await fetch(WAD_URL);
@@ -113,28 +199,29 @@ const fetchDefault = async () => {
     if (!res.ok || type.includes('text/html')) throw new Error('not found');
     startWad(await res.arrayBuffer(), WAD_URL);
   } catch {
-    $status.textContent = `${WAD_URL} 를 찾지 못했습니다. 아래에 WAD 파일을 직접 지정하세요.`;
+    const saved = await loadSavedWad();
+    if (saved) startWad(saved.buffer, `${saved.name} (이 브라우저에 저장됨)`);
+    else $status.textContent = '게임 데이터(DOOM1.WAD)가 필요합니다. 아래에 파일을 끌어다 놓거나 선택하세요. (파일은 이 브라우저에만 저장됩니다)';
   }
 };
-$file.addEventListener('change', async () => {
-  const f = $file.files[0];
-  if (f) startWad(await f.arrayBuffer(), f.name);
-});
+const loadFile = async (f) => { if (f) startWad(await f.arrayBuffer(), f.name, true); };
+$file.addEventListener('change', () => loadFile($file.files[0]));
 $drop.addEventListener('dragover', (e) => { e.preventDefault(); $drop.classList.add('over'); });
 $drop.addEventListener('dragleave', () => $drop.classList.remove('over'));
-$drop.addEventListener('drop', async (e) => {
-  e.preventDefault();
-  $drop.classList.remove('over');
-  const f = e.dataTransfer.files[0];
-  if (f) startWad(await f.arrayBuffer(), f.name);
-});
+$drop.addEventListener('drop', (e) => { e.preventDefault(); $drop.classList.remove('over'); loadFile(e.dataTransfer.files[0]); });
 
 // ---------- UI 이벤트 ----------
-$mapSel.addEventListener('change', () => { $mapSel.blur(); openMap($mapSel.value); });
-$mode.addEventListener('click', () => { $mode.blur(); setMode(!showAutomap); });
+$mapSel.addEventListener('change', () => {
+  $mapSel.blur();
+  if (!$mapSel.value) return;
+  menu.close(); openMap($mapSel.value); lockPointer();
+});
+$mode.addEventListener('click', () => { $mode.blur(); if (appState === 'play') setMode(!showAutomap); });
 $follow.addEventListener('change', () => { automap.follow = $follow.checked; });
 $flat.addEventListener('change', () => { automap.showFlat = $flat.checked; });
 $things.addEventListener('change', () => { automap.showThings = $things.checked; });
+$sfx.addEventListener('change', () => { if (sound) sound.sfxOn = $sfx.checked; });
+$music.addEventListener('change', () => { startAudio(); music?.setEnabled($music.checked); });
 $('btnFit').addEventListener('click', () => {
   $follow.checked = automap.follow = false;
   automap.fit();
@@ -142,15 +229,21 @@ $('btnFit').addEventListener('click', () => {
 
 const toggle = ($el) => { $el.checked = !$el.checked; $el.dispatchEvent(new Event('change')); };
 window.addEventListener('keydown', (e) => {
-  if (e.target instanceof HTMLSelectElement) return; // 맵 선택 중엔 키 입력 무시
-  keys[e.code] = true;
+  if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement) return; // 선택/체크 중엔 무시
+  startAudio();
+  if (menu?.open) {                                // 메뉴가 열려 있으면 메뉴가 키를 받는다
+    if (menu.key(e.code)) { e.preventDefault(); return; }
+  }
   if (e.code.startsWith('Arrow') || e.code === 'Tab' || e.code === 'Space') e.preventDefault();
-  if (!wad || e.repeat) return;
+  if (!wad || appState !== 'play') return;
+  if (e.code === 'Escape' && !e.repeat) { openMenu(); return; }
+  keys[e.code] = true;
+  if (e.repeat) return;
   if (e.code === 'Tab') setMode(!showAutomap);
-  if (e.code === 'KeyR') openMap(mapName);
+  if (e.code === 'KeyR') { openMap(mapName); lockPointer(); }
   if (e.code === 'Enter' && game?.exited) {
     const next = nextMapName(mapName, game.exited.secret);
-    if (next && wad.has(next)) openMap(next);
+    if (next && wad.has(next)) { openMap(next); lockPointer(); }
   }
   const digit = /^Digit([1-7])$/.exec(e.code);
   if (digit && !showAutomap) weaponKey = Number(digit[1]);
@@ -165,13 +258,28 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 
-// 마우스 시점 (Pointer Lock)
-$view.addEventListener('click', () => { if (document.pointerLockElement !== $view) $view.requestPointerLock(); });
-// 발사: 마우스 왼쪽(포인터 잠금 중), 휠로 무기 순환
+// 마우스: 화면 좌표(320×200)로 바꿔 메뉴에 전달 / 게임 중에는 포인터 잠금으로 시점
+const toScreen = (e) => {
+  const r = $view.getBoundingClientRect();
+  return [((e.clientX - r.left) / r.width) * SCREEN_W, ((e.clientY - r.top) / r.height) * SCREEN_H];
+};
+let skipUnlockPause = false;
+$view.addEventListener('pointermove', (e) => { if (menu?.open) menu.pointer(...toScreen(e), false); });
+$view.addEventListener('click', (e) => {
+  startAudio();
+  if (menu?.open) { menu.pointer(...toScreen(e), true); return; }
+  if (appState === 'play') lockPointer();
+});
 $view.addEventListener('mousedown', (e) => { if (e.button === 0 && document.pointerLockElement === $view) mouseFire = true; });
 window.addEventListener('mouseup', (e) => { if (e.button === 0) mouseFire = false; });
 $view.addEventListener('wheel', (e) => { e.preventDefault(); wheel += Math.sign(e.deltaY); }, { passive: false });
 document.addEventListener('mousemove', (e) => { if (document.pointerLockElement === $view) mouseDX += e.movementX; });
+// 포인터 잠금이 풀리면(Esc 등) 일시정지 메뉴를 연다
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement === $view) return;
+  if (skipUnlockPause) { skipUnlockPause = false; return; }
+  if (appState === 'play' && menu && !menu.open && !showAutomap) openMenu();
+});
 
 // 오토맵: 팬 (드래그) / 줌 (휠)
 let dragging = false;
@@ -191,18 +299,35 @@ $canvas.addEventListener('wheel', (e) => {
   automap.zoomAt((e.clientX - r.left) * dpr, (e.clientY - r.top) * dpr, e.deltaY < 0 ? 1.15 : 1 / 1.15);
 }, { passive: false });
 
+// 터치 기기: 가상 조이스틱과 버튼
+if (isTouchDevice()) {
+  touch = new TouchControls($stage, {
+    menu: () => { startAudio(); openMenu(); },
+    map: () => { if (appState === 'play') setMode(!showAutomap); },
+  });
+  $stage.classList.add('is-touch');
+  window.touch = touch; // 콘솔 디버깅용
+}
+
 // ---------- 입력 → 원작 명령 단위 ----------
 const buildCmd = () => {
   const run = keys.ShiftLeft || keys.ShiftRight;
   const dir = (pos, neg) => (pos ? 1 : 0) - (neg ? 1 : 0);
+  let forward = dir(keys.KeyW || keys.ArrowUp, keys.KeyS || keys.ArrowDown) * (run ? 50 : 25);
+  let side = dir(keys.KeyD, keys.KeyA) * (run ? 40 : 24);
+  let use = !!(keys.KeyE || keys.Space), cycle = Math.sign(wheel);
+  if (touch) {                                   // 조이스틱은 기울인 만큼 연속적으로
+    forward += Math.round(-touch.move.y * 50); side += Math.round(touch.move.x * 40);
+    const q = touch.takeQueued(); use = use || q.use; cycle = cycle || q.cycle;
+  }
   return {
-    forward: dir(keys.KeyW || keys.ArrowUp, keys.KeyS || keys.ArrowDown) * (run ? 50 : 25),
-    side: dir(keys.KeyD, keys.KeyA) * (run ? 40 : 24),
+    forward: Math.max(-50, Math.min(50, forward)),
+    side: Math.max(-40, Math.min(40, side)),
     turn: dir(keys.ArrowLeft, keys.ArrowRight) * (run ? 1280 : 640) * TURN_UNIT,
-    use: !!(keys.KeyE || keys.Space),
-    fire: !!(keys.ControlLeft || keys.ControlRight || keys.KeyF || mouseFire),
+    use,
+    fire: !!(keys.ControlLeft || keys.ControlRight || keys.KeyF || mouseFire || touch?.fire),
     weapon: weaponKey,
-    cycle: Math.sign(wheel),
+    cycle,
   };
 };
 
@@ -216,6 +341,7 @@ const updateOverlay = () => {
   else if (p.dead) { $hurt.style.background = '#800'; $hurt.style.opacity = '0.35'; }
   else if (game.pickupFlash > 0) { $hurt.style.background = '#fc4'; $hurt.style.opacity = String(game.pickupFlash * 0.05); }
   else $hurt.style.opacity = '0';
+  if (menu.open) { $overlay.hidden = true; return; }
   if (game.exited) {
     const next = nextMapName(mapName, game.exited.secret);
     $overlay.hidden = false;
@@ -237,37 +363,47 @@ const frame = (now) => {
   last = now;
   fps += (1 / Math.max(dt, 0.001) - fps) * 0.05;
 
-  if (game) {
-    const p = game.player;
-    if (mouseDX) { if (!p.dead && !game.exited) p.turnBy(-mouseDX * MOUSE_SENS); mouseDX = 0; }
+  if (wad) {
+    if (appState === 'play' && game) {
+      const p = game.player, paused = menu.open;
+      sound.listener = { x: p.x, y: p.y, angle: p.angle };
+      if (touch) mouseDX += touch.takeTurn() * 1.4;                    // 화면 드래그 = 마우스처럼
+      if (mouseDX) { if (!p.dead && !game.exited && !paused) p.turnBy(-mouseDX * mouseSens()); mouseDX = 0; }
 
-    // 로직은 35Hz 고정 tic, 화면은 매 프레임 (tic 사이는 위치 보간)
-    acc += dt;
-    while (acc >= TIC) { game.tick(buildCmd()); weaponKey = 0; wheel = 0; acc -= TIC; }
+      // 로직은 35Hz 고정 tic, 화면은 매 프레임 (tic 사이는 위치 보간). 메뉴가 열려 있으면 정지
+      if (paused) acc = 0; else acc += dt;
+      while (acc >= TIC) { game.tick(buildCmd()); weaponKey = 0; wheel = 0; acc -= TIC; }
+      if (songFor() !== currentSong) updateMusic();                    // 결과 화면/승리 음악 전환
 
-    if (showAutomap) {
-      resizeAutomap();
-      automap.tick();
-      automap.draw();
+      if (showAutomap) {
+        resizeAutomap();
+        automap.tick();
+        automap.draw();
+      } else {
+        const view = p.view(acc / TIC);
+        renderer.render(game.level, view, game.mobjs);
+        hud.drawWeapon(screenBuf, game, view);
+        hud.drawStatusBar(screenBuf, game);
+        if (menu.open) menu.draw(screenBuf, now);
+        screen.present();
+      }
+      updateOverlay();
+
+      hudTimer -= dt;
+      if (hudTimer <= 0) {
+        hudTimer = 0.25;
+        $hud.textContent =
+          `FPS ${fps.toFixed(0)} · HP ${p.health} · 방어구 ${p.armor} · ` +
+          `탄약 총알 ${p.ammo.clip} 샷 ${p.ammo.shell} 로켓 ${p.ammo.rocket} 셀 ${p.ammo.cell} · ` +
+          `열쇠 ${['blue', 'yellow', 'red'].filter((k) => p.keys[k]).join('/') || '-'} · ` +
+          `아이템 ${game.itemsFound}/${game.itemsTotal} · 비밀 ${game.secretsFound}/${game.secretsTotal} · ` +
+          `위치 (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) 바닥 ${p.sector.floorHeight}` +
+          `${p.noclip ? ' · NOCLIP' : ''}${p.powers.invuln > 0 ? ' · 무적' : ''}${p.powers.radsuit > 0 ? ' · 방사능복' : ''}`;
+      }
     } else {
-      const view = p.view(acc / TIC);
-      renderer.render(game.level, view, game.mobjs);
-      hud.drawWeapon(screenBuf, game, view);
-      hud.drawStatusBar(screenBuf, game);
+      // 타이틀 화면
+      menu.draw(screenBuf, now);
       screen.present();
-    }
-    updateOverlay();
-
-    hudTimer -= dt;
-    if (hudTimer <= 0) {
-      hudTimer = 0.25;
-      $hud.textContent =
-        `FPS ${fps.toFixed(0)} · HP ${p.health} · 방어구 ${p.armor} · ` +
-        `탄약 총알 ${p.ammo.clip} 샷 ${p.ammo.shell} 로켓 ${p.ammo.rocket} 셀 ${p.ammo.cell} · ` +
-        `열쇠 ${['blue', 'yellow', 'red'].filter((k) => p.keys[k]).join('/') || '-'} · ` +
-        `아이템 ${game.itemsFound}/${game.itemsTotal} · 비밀 ${game.secretsFound}/${game.secretsTotal} · ` +
-        `위치 (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) 바닥 ${p.sector.floorHeight}` +
-        `${p.noclip ? ' · NOCLIP' : ''}${p.powers.invuln > 0 ? ' · 무적' : ''}${p.powers.radsuit > 0 ? ' · 방사능복' : ''}`;
     }
   }
   requestAnimationFrame(frame);

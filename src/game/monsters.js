@@ -19,6 +19,13 @@ const normAngle = (a) => { a %= TWO_PI; return a > Math.PI ? a - TWO_PI : a < -M
 /** 원작의 (P_Random()-P_Random()) << shift 오차를 라디안으로 (shift 20 → 약 ±22°, 21 → ±44°) */
 const spread = (game, shift) => ((game.rnd() - game.rnd()) * TWO_PI) / 2 ** (32 - shift);
 
+/** 이 몬스터의 소리 종류(see/attack/pain/die …) 하나를 낸다 (여러 개면 무작위) */
+const say = (game, m, kind) => {
+  const snd = m.ai.sounds?.[kind];
+  if (!snd) return;
+  game.playSound(Array.isArray(snd) ? snd[game.rnd() % snd.length] : snd, m);
+};
+
 // ---------- 시야 / 대상 찾기 ----------
 function lookForPlayers(game, m, allAround) {
   const p = game.player;
@@ -127,6 +134,7 @@ export const ACTIONS = {
       if (m.ambush) { if (checkSight(game, m, targ)) found = true; } else found = true;
     }
     if (!found && !lookForPlayers(game, m, false)) return;
+    say(game, m, 'see');
     m.setState('run', game);
   },
 
@@ -149,7 +157,7 @@ export const ACTIONS = {
     }
     if (m.justAttacked) { m.justAttacked = false; newChaseDir(game, m); return; } // 연속 공격 금지
 
-    if (m.ai.melee && checkMeleeRange(game, m)) { m.setState(m.ai.melee, game); return; }
+    if (m.ai.melee && checkMeleeRange(game, m)) { say(game, m, 'melee'); m.setState(m.ai.melee, game); return; }
 
     if (m.ai.missile && !m.moveCount && checkMissileRange(game, m)) {
       m.setState(m.ai.missile, game);
@@ -158,17 +166,20 @@ export const ACTIONS = {
     }
 
     if (--m.moveCount < 0 || !move(game, m)) newChaseDir(game, m);
+    if (game.rnd() < 3) say(game, m, 'active');   // 가끔 으르렁
   },
 
   faceTarget,
 
   posAttack(m, game) {
+    say(game, m, 'attack');
     faceTarget(m, game);
     const aim = aimLineAttack(game, m, m.angle, MISSILE_RANGE);
     lineAttack(game, m, m.angle + spread(game, 20), MISSILE_RANGE, aim ? aim.slope : 0, ((game.rnd() % 5) + 1) * 3);
   },
 
   sposAttack(m, game) {
+    say(game, m, 'attack');
     faceTarget(m, game);
     const aim = aimLineAttack(game, m, m.angle, MISSILE_RANGE);
     for (let i = 0; i < 3; i++) {
@@ -193,7 +204,9 @@ export const ACTIONS = {
     spawnMissile(game, m, m.target, 'bruiserShot');
   },
 
-  pain() {}, scream() {}, xscream() {},
+  pain(m, game) { say(game, m, 'pain'); },
+  scream(m, game) { say(game, m, 'die'); },
+  xscream(m, game) { say(game, m, 'xdie'); },
 
   /** 쓰러지는 순간부터 통과할 수 있다 */
   fall(m, game) { game.setSolid(m, false); },
@@ -213,6 +226,7 @@ export const ACTIONS = {
 /** source 가 dest 를 향해 kind(불덩이 등)를 쏜다 */
 export function spawnMissile(game, source, dest, kind) {
   const m = game.spawnKind(kind, source.x, source.y, source.z + 32);
+  if (game.skill === 5 && m.speed < 20) m.speed = 20;   // 악몽: 불덩이가 빠르다
   m.owner = source; m.target = source;
   let ang = Math.atan2(dest.y - source.y, dest.x - source.x);
   if (dest.fuzz) ang += spread(game, 20);
@@ -226,6 +240,7 @@ export function spawnMissile(game, source, dest, kind) {
 
 /** 쏜 직후 반 걸음 앞으로 내보내고, 그 자리가 막혔으면 바로 터진다 */
 export function startMissile(game, m) {
+  game.playSound(m.ai.missile.sound, m);
   m.tics -= game.rnd() & 3;
   if (m.tics < 1) m.tics = 1;
   m.x += m.momx / 2; m.y += m.momy / 2; m.z += m.momz / 2;
@@ -234,6 +249,7 @@ export function startMissile(game, m) {
 }
 
 export function explodeMissile(game, m) {
+  game.playSound(m.ai.missile.deathSound, m);
   m.momx = m.momy = m.momz = 0;
   m.missile = false;
   m.setState('die', game);

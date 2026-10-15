@@ -48,6 +48,28 @@ export class Hud {
     }
   }
 
+  /** 원작 글꼴(STCFN)로 글자 쓰기. 대문자만 지원, 소문자는 대문자로 바꿔 그린다 */
+  text(frame, str, x, y) {
+    let cx = x;
+    for (const ch of str.toUpperCase()) {
+      const code = ch.charCodeAt(0);
+      const tex = code >= 33 && code <= 95 ? this.patch(`STCFN${String(code).padStart(3, '0')}`) : null;
+      if (tex) { this.blit(frame, tex, cx, y); cx += tex.width; } else cx += 4;
+    }
+    return cx;
+  }
+
+  /** 글자 폭 (가운데 정렬용) */
+  textWidth(str) {
+    let w = 0;
+    for (const ch of str.toUpperCase()) {
+      const code = ch.charCodeAt(0);
+      const tex = code >= 33 && code <= 95 ? this.patch(`STCFN${String(code).padStart(3, '0')}`) : null;
+      w += tex ? tex.width : 4;
+    }
+    return w;
+  }
+
   // ---------- 손에 든 무기 ----------
   drawWeapon(frame, game, view) {
     const p = game.player;

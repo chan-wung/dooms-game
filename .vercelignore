@@ -1,0 +1,5 @@
+public/wad
+legacy
+node_modules
+*.WAD
+*.wad

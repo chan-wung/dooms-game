@@ -55,6 +55,16 @@ function movePlane(game, sec, speed, dest, crush, ceiling, dir) {
   return OK;
 }
 
+/** 섹터 소리의 위치: 섹터에 접한 선들의 경계 상자 중심 */
+export const soundOrigin = (sec) => {
+  if (!sec.soundOrg) {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const l of sec.lines) { x0 = Math.min(x0, l.minX); x1 = Math.max(x1, l.maxX); y0 = Math.min(y0, l.minY); y1 = Math.max(y1, l.maxY); }
+    sec.soundOrg = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+  }
+  return sec.soundOrg;
+};
+
 // ---------- thinker: 문 ----------
 class Door {
   /** type: normal | close | open | close30ThenOpen | blazeRaise | blazeOpen | blazeClose */
@@ -63,6 +73,13 @@ class Door {
     this.direction = direction; this.speed = speed; this.topHeight = topHeight;
     this.countdown = 0;
     sec.specialData = this;
+    this.sound();
+  }
+
+  /** 지금 방향(열림/닫힘)에 맞는 소리 */
+  sound() {
+    const blaze = this.type.startsWith('blaze');
+    this.game.playSound(this.direction === 1 ? (blaze ? 'BDOPN' : 'DOROPN') : (blaze ? 'BDCLS' : 'DORCLS'), soundOrigin(this.sector));
   }
 
   tick() {
@@ -72,6 +89,7 @@ class Door {
         if (--this.countdown === 0) {
           if (type === 'normal' || type === 'blazeRaise') this.direction = -1;
           else if (type === 'close30ThenOpen') this.direction = 1;
+          this.sound();
         }
         break;
       case -1: { // 닫히는 중
@@ -81,6 +99,7 @@ class Door {
           else { sec.specialData = null; return true; }
         } else if (res === CRUSHED && type !== 'blazeClose' && type !== 'close') {
           this.direction = 1; // 뭔가 끼면 다시 열림
+          this.sound();
         }
         break;
       }
@@ -105,6 +124,7 @@ class Plat {
     this.speed = speed; this.low = low; this.high = high; this.wait = wait;
     this.status = status; this.count = 0;
     sec.specialData = this;
+    game.playSound('PSTART', soundOrigin(sec));
   }
 
   tick() {
@@ -112,20 +132,21 @@ class Plat {
     switch (this.status) {
       case 'up': {
         const res = movePlane(game, sec, this.speed, this.high, false, false, 1);
-        if (res === CRUSHED) { this.count = this.wait; this.status = 'down'; }
+        if (res === CRUSHED) { this.count = this.wait; this.status = 'down'; game.playSound('PSTART', soundOrigin(sec)); }
         else if (res === PASTDEST) {
           this.count = this.wait; this.status = 'waiting';
+          game.playSound('PSTOP', soundOrigin(sec));
           if (this.type !== 'perpetual') { sec.specialData = null; return true; }
         }
         break;
       }
       case 'down': {
         const res = movePlane(game, sec, this.speed, this.low, false, false, -1);
-        if (res === PASTDEST) { this.count = this.wait; this.status = 'waiting'; }
+        if (res === PASTDEST) { this.count = this.wait; this.status = 'waiting'; game.playSound('PSTOP', soundOrigin(sec)); }
         break;
       }
       case 'waiting':
-        if (--this.count <= 0) this.status = sec.floorHeight === this.low ? 'up' : 'down';
+        if (--this.count <= 0) { this.status = sec.floorHeight === this.low ? 'up' : 'down'; game.playSound('PSTART', soundOrigin(sec)); }
         break;
     }
     return false;
@@ -141,7 +162,8 @@ class FloorMover {
 
   tick() {
     const res = movePlane(this.game, this.sector, this.speed, this.dest, false, false, this.direction);
-    if (res === PASTDEST) { this.sector.specialData = null; return true; }
+    if (!(this.game.time & 7)) this.game.playSound('STNMOV', soundOrigin(this.sector));
+    if (res === PASTDEST) { this.game.playSound('PSTOP', soundOrigin(this.sector)); this.sector.specialData = null; return true; }
     return false;
   }
 }
@@ -340,10 +362,10 @@ export class Specials {
 
     for (const [, ld] of hits) {
       if (!ld.special) {
-        if (!ld.backSector) return; // 벽은 사용을 막는다
+        if (!ld.backSector) { this.game.playSound('NOWAY'); return; } // 벽은 사용을 막는다
         const open = Math.min(ld.frontSector.ceilingHeight, ld.backSector.ceilingHeight)
           - Math.max(ld.frontSector.floorHeight, ld.backSector.floorHeight);
-        if (open <= 0) return;       // 닫힌 문 같은 것도 막는다
+        if (open <= 0) { this.game.playSound('NOWAY'); return; } // 닫힌 문 같은 것도 막는다
         continue;                    // 열린 양면선은 통과
       }
       const side = Physics.pointOnLineSide(ld, p.x, p.y);
@@ -375,6 +397,7 @@ export class Specials {
     const ok = def.action(ld, side);
     if (!ok) return;
     if (how === 'use') {
+      this.game.playSound(ld.special === 11 || ld.special === 51 ? 'SWTCHX' : 'SWTCHN', { x: (ld.v1.x + ld.v2.x) / 2, y: (ld.v1.y + ld.v2.y) / 2 });
       this.swapSwitchTextures(ld);
       if (def.repeat) this.game.add(new ButtonTimer(this, ld));
     }
@@ -396,13 +419,13 @@ export class Specials {
     const g = this.game, p = g.player;
     const monster = by && by !== p;   // 몬스터는 열쇠 없는 일반 문만 열고, 닫지는 않는다
     const key = KEY_DOORS[ld.special];
-    if (key && (monster || !p.keys[key])) { if (!monster) g.say(`You need a ${key} key to open this door.`); return; }
+    if (key && (monster || !p.keys[key])) { if (!monster) { g.say(`You need a ${key} key to open this door.`); g.playSound('OOF'); } return; }
 
     const sec = ld.backSector;
     if (!sec) return;
     const sp = ld.special;
     if (sec.specialData instanceof Door) {
-      if (!monster && [1, 26, 27, 28, 117].includes(sp)) sec.specialData.direction = sec.specialData.direction === -1 ? 1 : -1;
+      if (!monster && [1, 26, 27, 28, 117].includes(sp)) { sec.specialData.direction = sec.specialData.direction === -1 ? 1 : -1; sec.specialData.sound(); }
       return;
     }
     if (sec.specialData) return;
@@ -514,7 +537,9 @@ export class Specials {
     for (const sec of this.sectorsWithTag(ld.tag)) {
       const dest = this.level.things.find((t) => t.type === 14 && sectorAt(this.level, t.x, t.y) === sec);
       if (!dest) continue;
+      g.playSound('TELEPT', { x: p.x, y: p.y });
       p.teleportTo(g, dest.x, dest.y, (dest.angle * Math.PI) / 180);
+      g.playSound('TELEPT', { x: dest.x, y: dest.y });
       return true;
     }
     return false;

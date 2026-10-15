@@ -14,7 +14,7 @@ export const newMaxAmmo = () => ({ ...BASE_MAX });
 
 const giveAmmo = (p, type, clips) => {
   if (p.ammo[type] >= p.maxAmmo[type]) return false;
-  p.ammo[type] = Math.min(p.maxAmmo[type], p.ammo[type] + CLIP_AMMO[type] * clips);
+  p.ammo[type] = Math.min(p.maxAmmo[type], p.ammo[type] + CLIP_AMMO[type] * clips * (p.ammoMultiplier ?? 1));
   return true;
 };
 

@@ -29,11 +29,25 @@
   #hud { margin-top: 6px; font-size: 12px; min-height: 1.4em; }
   .help { margin-top: 8px; font-size: 12px; }
   .help b { color: var(--accent); font-weight: 400; }
+  /* 터치 조작 */
+  #touch { position: absolute; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; display: none; }
+  .is-touch #touch { display: block; }
+  #touch .t-turn { position: absolute; top: 0; right: 0; bottom: 0; width: 55%; }
+  #touch .t-stick { position: absolute; left: 4%; bottom: 14%; width: 120px; height: 120px; border-radius: 50%;
+                    background: rgba(255,255,255,.12); border: 2px solid rgba(255,255,255,.35); display: grid; place-items: center; }
+  #touch .t-thumb { width: 52px; height: 52px; border-radius: 50%; background: rgba(255,255,255,.45); }
+  #touch .t-btn { position: absolute; width: 72px; height: 72px; border-radius: 50%; border: 2px solid rgba(255,255,255,.5);
+                  background: rgba(255,90,60,.45); color: #fff; font: 700 13px ui-monospace, Consolas, monospace; }
+  #touch .t-fire { right: 4%; bottom: 16%; width: 92px; height: 92px; }
+  #touch .t-use { right: 28%; bottom: 10%; background: rgba(80,160,255,.45); }
+  #touch .t-weapon { right: 4%; bottom: 46%; background: rgba(255,210,60,.4); }
+  #touch .t-small { position: absolute; top: 6px; padding: 4px 10px; font-size: 11px; opacity: .8; }
+  #touch .t-menu { right: 6px; } #touch .t-map { right: 64px; }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-  <h1>doom-js · Phase 6 — 전투 · 몬스터 · HUD</h1>
+  <h1>doom-js · Phase 7 — 소리 · 메뉴 · 모바일</h1>
   <div id="drop">
     <p>public/wad/DOOM1.WAD 를 찾지 못하면 여기에 WAD 파일을 드롭하거나 선택하세요</p>
     <input type="file" id="file" accept=".wad,.WAD">
@@ -42,6 +56,8 @@
   <div id="bar" hidden>
     <label>맵 <select id="mapSel"></select></label>
     <button id="btnMode">오토맵 (Tab)</button>
+    <label><input type="checkbox" id="optSfx" checked> 효과음</label>
+    <label><input type="checkbox" id="optMusic" checked> 음악</label>
     <span id="mapOpts" hidden>
       <label><input type="checkbox" id="optFollow" checked> 따라가기 (F)</label>
       <label><input type="checkbox" id="optFlat"> 높이 같은 양면선</label>
@@ -58,7 +74,7 @@
     <div id="hud"></div>
   </div>
   <p class="help" id="help" hidden>
-    <b>WASD</b> 이동 · <b>Shift</b> 달리기 · <b>←/→</b> 회전 · <b>E/Space</b> 사용(문·스위치) · <b>Ctrl/F/마우스 왼쪽</b> 발사 · <b>1~5</b> 무기(휠 순환) · <b>클릭</b> 마우스 시점(Esc 해제) · <b>Tab</b> 오토맵 · <b>R</b> 재시작 ·
+    <b>WASD</b> 이동 · <b>Shift</b> 달리기 · <b>←/→</b> 회전 · <b>E/Space</b> 사용(문·스위치) · <b>Ctrl/F/마우스 왼쪽</b> 발사 · <b>1~5</b> 무기(휠 순환) · <b>클릭</b> 마우스 시점 · <b>Esc</b> 메뉴(일시정지) · <b>Tab</b> 오토맵 · <b>R</b> 재시작 ·
     디버그: <b>N</b> noclip · <b>K</b> 열쇠 전부 ·
     오토맵: <b>휠</b> 줌 · <b>드래그</b> 팬 · <b>F</b> 따라가기 · <b>T</b> Things · <b>0</b> 전체 보기
   </p>

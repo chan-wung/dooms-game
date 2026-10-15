@@ -79,6 +79,8 @@ export class Mobj {
     this.stateLabel = label; this.stateIndex = index;
     const s = this.ai.states[label][index];
     this.frame = s.f.charCodeAt(0) - 65; this.bright = s.b; this.tics = s.t;
+    // 악몽 난이도: 몬스터의 추적/공격/고통 동작이 두 배 빠르다
+    if (game.skill === 5 && this.tics > 1 && (label === 'run' || label === 'attack' || label === 'pain')) this.tics >>= 1;
     if (s.a) game.actions[s.a]?.(this, game);
   }
 

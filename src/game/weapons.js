@@ -28,7 +28,7 @@ export const WEAPONS = {
   shotgun: {
     sprite: 'SHTG', ammo: 'shell',
     ready: [S('A', 1, 'ready')], up: [S('A', 1, 'raise')], down: [S('A', 1, 'lower')],
-    attack: [S('A', 3), S('A', 7, 'fireShotgun'), S('B', 5), S('C', 5), S('D', 4), S('C', 5), S('B', 5), S('A', 3), S('A', 7, 'refire')],
+    attack: [S('A', 3), S('A', 7, 'fireShotgun'), S('B', 5), S('C', 5), S('D', 4, 'sgCock'), S('C', 5), S('B', 5), S('A', 3), S('A', 7, 'refire')],
     flashSprite: 'SHTF', flash: [S('A', 4, 'light1', true), S('B', 3, 'light2', true)],
   },
   chaingun: {
@@ -107,6 +107,7 @@ export function bringUpWeapon(game, p) {
   p.readyWeapon = p.pendingWeapon;
   p.pendingWeapon = null;
   p.psp.weapon.sy = WEAPON_BOTTOM;
+  if (p.readyWeapon === 'chainsaw') game.playSound('SAWUP');
   setWeaponState(game, p, 'up');
 }
 
@@ -173,6 +174,7 @@ const ACTIONS = {
   /** 대기: 무기 교체/발사 확인, 걸을 때 흔들림 */
   ready(game, p) {
     const ps = p.psp.weapon;
+    if (p.readyWeapon === 'chainsaw' && ps.label === 'ready' && ps.idx === 0 && !p.cmd?.fire) game.playSound('SAWIDL');
     if (p.pendingWeapon || p.dead) { setWeaponState(game, p, 'down'); return; }
     if (p.cmd?.fire) {
       if (!p.attackDown || (p.readyWeapon !== 'rocketLauncher')) { p.attackDown = true; fireWeapon(game, p); return; }
@@ -207,23 +209,28 @@ const ACTIONS = {
   },
 
   firePistol(game, p) {
+    game.playSound('PISTOL');
     useAmmo(p); setFlash(game, p);
     bulletSlope(game, p); gunShot(game, p, !p.refire);
   },
 
   fireShotgun(game, p) {
+    game.playSound('SHOTGN');
     useAmmo(p); setFlash(game, p);
     bulletSlope(game, p);
     for (let i = 0; i < 7; i++) gunShot(game, p, false);
   },
 
   fireCGun(game, p) {
+    game.playSound('PISTOL');
     useAmmo(p);
     setFlash(game, p, p.psp.weapon.idx);   // 발사 프레임(A/B)에 맞춰 화염도 번갈아
     bulletSlope(game, p); gunShot(game, p, !p.refire);
   },
 
   gunFlash(game, p) { setFlash(game, p); },
+
+  sgCock(game) { game.playSound('SGCOCK'); },
 
   fireMissile(game, p) {
     useAmmo(p);
@@ -236,7 +243,7 @@ const ACTIONS = {
     const angle = p.angle + spread(game, 18);
     const aim = aimLineAttack(game, p, angle, MELEE_RANGE);
     const hit = lineAttack(game, p, angle, MELEE_RANGE, aim ? aim.slope : 0, damage);
-    if (hit) p.angle = Math.atan2(hit.y - p.y, hit.x - p.x);   // 맞은 쪽으로 몸이 돌아감
+    if (hit) { game.playSound('PUNCH'); p.angle = Math.atan2(hit.y - p.y, hit.x - p.x); }   // 맞은 쪽으로 몸이 돌아감
   },
 
   saw(game, p) {
@@ -244,6 +251,7 @@ const ACTIONS = {
     const angle = p.angle + spread(game, 18);
     const aim = aimLineAttack(game, p, angle, MELEE_RANGE + 1);
     const hit = lineAttack(game, p, angle, MELEE_RANGE + 1, aim ? aim.slope : 0, damage);
+    game.playSound(hit ? 'SAWHIT' : 'SAWFUL');
     if (!hit) return;
     // 부드럽게 목표 쪽으로 돌아봄
     const diff = normAngle(Math.atan2(hit.y - p.y, hit.x - p.x) - p.angle), step = Math.PI / 2 / 20;

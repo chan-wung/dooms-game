@@ -79,6 +79,7 @@ export class Player {
   /** 데미지: 무적이면 무시, 방어구가 일부 흡수 (원작 P_DamageMobj) */
   damage(n, game, source = null) {
     if (this.dead || this.powers.invuln > 0) return;
+    if (game.skill === 1) n = Math.floor(n / 2);   // 가장 쉬운 난이도: 피해 절반
     if (this.armorType) {
       let saved = Math.floor(n / (this.armorType === 1 ? 3 : 2));
       if (this.armor <= saved) { saved = this.armor; this.armorType = 0; }
@@ -92,7 +93,12 @@ export class Player {
     game.lastDamage = n;
     game.hurtFace = 35;   // 얼굴이 아픈 표정을 짓는 시간 (tic)
     game.flashDamage = 6;
-    if (this.health <= 0) { this.health = 0; this.dead = true; game.say('YOU DIED  —  R 키로 다시 시작'); }
+    if (this.health <= 0) {
+      game.playSound(this.health < -50 ? 'PDIEHI' : 'PLDETH');
+      this.health = 0; this.dead = true; game.say('YOU DIED  —  R 키로 다시 시작');
+    } else {
+      game.playSound('PLPAIN');
+    }
   }
 
   teleportTo(game, x, y, angle) {
@@ -142,6 +148,7 @@ export class Player {
     this.moveXY(game, cmd);
     if (this.x !== ox || this.y !== oy) specials.crossLines(this, ox, oy);
     this.moveZ();
+    if (this.hardLanding) { this.hardLanding = false; game.playSound('OOF'); }
     this.calcHeight(game);
 
     // 무기: 교체 요청 → 상태 진행 (발사는 무기 상태 머신 안에서 처리)
@@ -201,7 +208,7 @@ export class Player {
     this.z += this.momz;
     if (this.z <= this.floorz) {
       if (this.momz < 0) {
-        if (this.momz < -GRAVITY * 8) this.deltaViewheight = this.momz / 8; // 세게 착지하면 시야가 꺼짐
+        if (this.momz < -GRAVITY * 8) { this.deltaViewheight = this.momz / 8; this.hardLanding = true; } // 세게 착지하면 시야가 꺼지고 '억' 소리
         this.momz = 0;
       }
       this.z = this.floorz;

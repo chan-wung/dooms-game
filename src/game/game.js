@@ -8,6 +8,12 @@ import { ACTIONS, moveMobj } from './monsters.js';
 import { setupWeapons } from './weapons.js';
 import { sectorAt } from '../render/bsp.js';
 
+/** 아이템 줍는 소리: 무기 = WPNUP, 파워업·소울스피어 = GETPOW, 그 외 ITEMUP */
+const PICKUP_SOUND = {
+  shotgun: 'WPNUP', chaingun: 'WPNUP', rocketLauncher: 'WPNUP', plasmaGun: 'WPNUP', bfg: 'WPNUP', chainsaw: 'WPNUP',
+  soulsphere: 'GETPOW', invulnerability: 'GETPOW', berserk: 'GETPOW', invisibility: 'GETPOW', radsuit: 'GETPOW', automap: 'GETPOW', lightamp: 'GETPOW',
+};
+
 /** 한 레벨의 게임 상태와 35Hz 틱 진행 */
 export const TICRATE = 35;
 const MAX_EFFECTS = 160; // 먼지/피가 한꺼번에 너무 많으면 오래된 것부터 지운다
@@ -30,6 +36,7 @@ export class Game {
     this.blockmap = new Blockmap(level);
     this.physics = new Physics(level, this.blockmap);
     this.player = new Player(level);
+    this.player.ammoMultiplier = skill === 1 || skill === 5 ? 2 : 1;   // 가장 쉬움/악몽: 탄약 2배
     this.physics.player = this.player;
     this.specials = new Specials(this);
     this.thinkers = [];
@@ -112,11 +119,15 @@ export class Game {
       if (dz > HEIGHT || dz < -8) continue;
       if (touchSpecial(this, p, m)) {
         if (m.info.countItem) this.itemsFound++;
+        this.playSound(PICKUP_SOUND[m.pickup] ?? 'ITEMUP');
         this.removeMobj(m);
         this.pickupFlash = 4;
       }
     }
   }
+
+  /** 효과음 요청 (src = 소리 나는 곳 {x,y}, 없으면 플레이어 자신). 실제 재생은 화면 쪽(onSound)이 한다 */
+  playSound(name, src = null) { if (this.onSound) this.onSound(name, src); }
 
   add(thinker) { this.thinkers.push(thinker); return thinker; }
   say(text) { this.message = text; this.messageTics = 3 * TICRATE; }

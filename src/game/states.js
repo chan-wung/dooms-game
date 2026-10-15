@@ -22,6 +22,7 @@ export const AI = {
     },
     after: { stand: 'stand', run: 'run', attack: 'run', pain: 'run' },
     missile: 'attack', painState: 'pain',
+    sounds: { see: ['POSIT1', 'POSIT2', 'POSIT3'], attack: 'PISTOL', pain: 'POPAIN', die: ['PODTH1', 'PODTH2', 'PODTH3'], xdie: 'SLOP', active: 'POSACT' },
   },
   // ---------- 샷건맨 ----------
   SPOS: {
@@ -36,6 +37,7 @@ export const AI = {
     },
     after: { stand: 'stand', run: 'run', attack: 'run', pain: 'run' },
     missile: 'attack', painState: 'pain',
+    sounds: { see: 'SGTSIT', attack: 'SHOTGN', pain: 'POPAIN', die: ['PODTH1', 'PODTH2', 'PODTH3'], xdie: 'SLOP', active: 'POSACT' },
   },
   // ---------- 임프 ----------
   TROO: {
@@ -50,6 +52,7 @@ export const AI = {
     },
     after: { stand: 'stand', run: 'run', attack: 'run', pain: 'run' },
     melee: 'attack', missile: 'attack', painState: 'pain',
+    sounds: { see: ['BGSIT1', 'BGSIT2'], melee: 'CLAW', pain: 'POPAIN', die: ['BGDTH1', 'BGDTH2'], xdie: 'SLOP', active: 'BGACT' },
   },
   // ---------- 데몬 / 스펙터 ----------
   SARG: {
@@ -63,6 +66,7 @@ export const AI = {
     },
     after: { stand: 'stand', run: 'run', attack: 'run', pain: 'run' },
     melee: 'attack', painState: 'pain',
+    sounds: { see: 'SGTSIT', melee: 'SGTATK', pain: 'DMPAIN', die: 'SGTDTH', active: 'DMACT' },
   },
   // ---------- 바론 오브 헬 ----------
   BOSS: {
@@ -76,6 +80,7 @@ export const AI = {
     },
     after: { stand: 'stand', run: 'run', attack: 'run', pain: 'run' },
     melee: 'attack', missile: 'attack', painState: 'pain',
+    sounds: { see: 'BRSSIT', melee: 'CLAW', pain: 'POPAIN', die: 'BRSDTH', active: 'DMACT' },
   },
   // ---------- 통 ----------
   BAR1: {
@@ -85,21 +90,22 @@ export const AI = {
       die: [S('A', 5, null, true), S('B', 5, 'scream', true), S('C', 5, null, true), S('D', 10, 'explode', true), S('E', 10, null, true)],
     },
     after: { stand: 'stand', die: 'remove' },
+    sounds: { die: 'BAREXP' },
   },
 
   // ---------- 투사체 ----------
   troopShot: {   // 임프 불덩이
-    sprite: 'BAL1', missile: { speed: 10, damage: 3 }, radius: 6, height: 8,
+    sprite: 'BAL1', missile: { speed: 10, damage: 3, sound: 'FIRSHT', deathSound: 'FIRXPL' }, radius: 6, height: 8,
     states: { fly: [S('A', 4, null, true), S('B', 4, null, true)], die: [S('C', 6, null, true), S('D', 6, null, true), S('E', 6, null, true)] },
     after: { fly: 'fly', die: 'remove' },
   },
   bruiserShot: { // 바론 불덩이
-    sprite: 'BAL7', missile: { speed: 15, damage: 8 }, radius: 6, height: 8,
+    sprite: 'BAL7', missile: { speed: 15, damage: 8, sound: 'FIRSHT', deathSound: 'FIRXPL' }, radius: 6, height: 8,
     states: { fly: [S('A', 4, null, true), S('B', 4, null, true)], die: [S('C', 6, null, true), S('D', 6, null, true), S('E', 6, null, true)] },
     after: { fly: 'fly', die: 'remove' },
   },
   rocket: {      // 로켓
-    sprite: 'MISL', missile: { speed: 20, damage: 20 }, radius: 11, height: 8,
+    sprite: 'MISL', missile: { speed: 20, damage: 20, sound: 'RLAUNC', deathSound: 'BAREXP' }, radius: 11, height: 8,
     states: { fly: [S('A', 1, null, true)], die: [S('B', 8, 'explode', true), S('C', 6, null, true), S('D', 4, null, true)] },
     after: { fly: 'fly', die: 'remove' },
   },
