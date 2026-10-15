@@ -180,6 +180,7 @@ export class Renderer {
     const xe = Math.min(W - 1, Math.ceil(sx2 - 0.5) - 1);
     if (xs > xe) return;
     this.segsDrawn++;
+    seg.linedef.mapped = true;                          // 본 선: 오토맵에 나타난다
 
     // 앞/뒤 섹터와 벽 종류 결정
     const front = seg.frontSector, back = seg.backSector;

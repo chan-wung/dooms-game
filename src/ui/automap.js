@@ -2,17 +2,23 @@ import { LINE_FLAGS } from '../wad/level.js';
 
 /**
  * 2D 오토맵. 맵 좌표(y 위쪽 +)를 화면 좌표로 변환해 LINEDEFS를 그린다.
- * 원작 오토맵 색 규칙: 외벽 빨강 / 바닥 높이 변화 갈색 / 천장 높이 변화 노랑 / 높이 변화 없는 양면선은 숨김(디버그 모드에선 회색).
+ * 원작 규칙: 플레이어가 본 선만 그린다 (컴퓨터 지도를 먹으면 안 본 선도 회색으로).
+ * 색: 외벽·비밀 문 빨강 / 텔레포트 선 어두운 빨강 / 바닥 높이 변화 갈색 / 천장 높이 변화 노랑 / 높이 변화 없는 양면선은 숨김.
+ * 전체 보기(cheat, 디버그)에서는 모든 선과 비밀 문(분홍)·높이 같은 양면선(회색)도 보인다.
  */
 const COLORS = {
   wall: '#fc0000',
   floorChange: '#bc7840',
   ceilingChange: '#fcfc00',
   secret: '#ff40ff',
+  teleport: '#a80000',
+  unseen: '#8a8a8a',
   flat: '#3c3c46',
   thing: '#58a0ff',
   player: '#7dff8a',
 };
+
+const DEFAULT_SCALE = 0.35;
 
 export class Automap {
   /** @param {HTMLCanvasElement} canvas */
@@ -23,7 +29,7 @@ export class Automap {
     this.scale = 0.2;           // 화면 px / 맵 유닛
     this.cx = 0; this.cy = 0;   // 화면 중심에 놓일 맵 좌표
     this.follow = true;
-    this.showFlat = false;      // 높이 변화 없는 양면선 표시
+    this.cheat = false;         // 전체 보기 (디버그)
     this.showThings = false;
   }
 
@@ -31,7 +37,9 @@ export class Automap {
   setLevel(level, player) {
     this.level = level;
     this.player = player;
-    this.fit();
+    this.follow = true;
+    this.scale = DEFAULT_SCALE;   // 플레이어 주변이 크게 보이게 (전체는 '전체 보기'로)
+    this.tick();
   }
 
   /** 따라가기 모드면 화면 중심을 플레이어에 맞춤 */
@@ -73,12 +81,18 @@ export class Automap {
   }
 
   lineColor(l) {
-    if (l.flags & LINE_FLAGS.SECRET) return COLORS.secret;
-    if (!l.left || !l.right) return COLORS.wall;
-    const a = l.right.sector, b = l.left.sector;
-    if (a.floorHeight !== b.floorHeight) return COLORS.floorChange;
-    if (a.ceilingHeight !== b.ceilingHeight) return COLORS.ceilingChange;
-    return this.showFlat ? COLORS.flat : null;
+    const hidden = l.flags & LINE_FLAGS.NOT_ON_MAP;
+    if (this.cheat || l.mapped) {
+      if (hidden && !this.cheat) return null;
+      if (!l.left || !l.right) return COLORS.wall;
+      if (l.special === 39) return COLORS.teleport;
+      if (l.flags & LINE_FLAGS.SECRET) return this.cheat ? COLORS.secret : COLORS.wall;   // 비밀 문은 벽처럼 보인다
+      const a = l.right.sector, b = l.left.sector;
+      if (a.floorHeight !== b.floorHeight) return COLORS.floorChange;
+      if (a.ceilingHeight !== b.ceilingHeight) return COLORS.ceilingChange;
+      return this.cheat ? COLORS.flat : null;
+    }
+    return this.player.powers?.automap && !hidden ? COLORS.unseen : null;                   // 컴퓨터 지도
   }
 
   draw() {

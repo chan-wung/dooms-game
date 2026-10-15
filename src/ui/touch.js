@@ -7,6 +7,7 @@ export const isTouchDevice = () =>
   || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
   || 'ontouchstart' in window;
 
+const HELP_KEY = 'doomjs.touchhelp';
 const STICK_RADIUS = 56;
 const TURN_STICK_PX_PER_SEC = 950; // 오른쪽 스틱을 끝까지 밀었을 때의 드래그 환산 속도
 
@@ -14,7 +15,7 @@ const TURN_STICK_PX_PER_SEC = 950; // 오른쪽 스틱을 끝까지 밀었을 �
 const capture = (el, id) => { try { el.setPointerCapture(id); } catch { /* 무시 */ } };
 
 export class TouchControls {
-  /** @param {HTMLElement} root 컨트롤이 놓일 곳(#stage), handlers = { menu(), map() } */
+  /** @param {HTMLElement} root 컨트롤이 놓일 곳(#stage), handlers = { menu(), map(), follow(), fit() } */
   constructor(root, handlers) {
     this.move = { x: 0, y: 0 };   // -1..1 (y: 위가 -1 = 앞으로)
     this.look = { x: 0, y: 0 };   // 오른쪽 스틱: x 만 사용 (좌우 회전)
@@ -35,7 +36,19 @@ export class TouchControls {
       <button class="t-btn t-use">USE</button>
       <div class="t-weapons">${[1, 2, 3, 4, 5, 6, 7].map((n) => `<button class="t-wbtn" data-w="${n}">${n}</button>`).join('')}</div>
       <button class="t-small t-menu">MENU</button>
-      <button class="t-small t-map">MAP</button>`;
+      <button class="t-small t-map">MAP</button>
+      <button class="t-small t-follow">FOLLOW</button>
+      <button class="t-small t-fit">FIT</button>
+      <div class="t-help" hidden>
+        <b>조작 방법</b>
+        <p><span>왼쪽 스틱</span> 이동</p>
+        <p><span>오른쪽 스틱 · 화면 드래그</span> 둘러보기</p>
+        <p><span>FIRE</span> 발사 &nbsp; <span>USE</span> 문·스위치</p>
+        <p><span>1~7</span> 무기 선택</p>
+        <p><span>MAP</span> 오토맵 (두 손가락으로 확대·축소, 한 손가락으로 이동)</p>
+        <p><span>MENU</span> 저장·불러오기·옵션</p>
+        <em>화면을 탭하면 시작합니다</em>
+      </div>`;
     root.appendChild(el);
     this.el = el;
 
@@ -47,7 +60,28 @@ export class TouchControls {
     el.querySelectorAll('.t-wbtn').forEach((b) => this.bindHold(b, (on) => { if (on) this.weaponQueued = Number(b.dataset.w); }));
     this.bindHold(el.querySelector('.t-menu'), (on) => { if (on) handlers.menu(); });
     this.bindHold(el.querySelector('.t-map'), (on) => { if (on) handlers.map(); });
+    this.bindHold(el.querySelector('.t-follow'), (on) => { if (on) handlers.follow(); });
+    this.bindHold(el.querySelector('.t-fit'), (on) => { if (on) handlers.fit(); });
+
+    this.helpEl = el.querySelector('.t-help');
+    this.helpEl.addEventListener('pointerdown', (e) => { e.preventDefault(); this.hideHelp(); });
   }
+
+  /** 오토맵을 보는 동안: 조작 버튼을 숨기고 화면 제스처(확대·이동)를 캔버스로 넘긴다 */
+  setAutomap(on) { this.el.classList.toggle('automap', on); }
+
+  /** 처음 한 번만 조작 안내 (게임은 안내를 닫을 때까지 멈춘다) */
+  showHelpOnce() {
+    try { if (localStorage.getItem(HELP_KEY)) return; } catch { /* 저장소를 못 쓰면 매번 보여준다 */ }
+    this.helpEl.hidden = false;
+  }
+
+  hideHelp() {
+    this.helpEl.hidden = true;
+    try { localStorage.setItem(HELP_KEY, '1'); } catch { /* 무시 */ }
+  }
+
+  get helpOpen() { return !this.helpEl.hidden; }
 
   bindHold(button, fn) {
     button.addEventListener('pointerdown', (e) => { e.preventDefault(); fn(true); capture(button, e.pointerId); });

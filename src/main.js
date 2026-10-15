@@ -41,6 +41,7 @@ let appState = 'title';           // 'title' | 'play' | 'intermission' (통계 �
 let showAutomap = false;
 let acc = 0;
 const automap = new Automap($canvas);
+window.automap = automap; // 콘솔 디버깅용
 let renderer = null, screen = null, hud = null, menu = null, sound = null, music = null, touch = null, inter = null, finale = null;
 const screenBuf = new Uint32Array(SCREEN_W * SCREEN_H);  // 화면 버퍼 (3D 뷰 + 상태바 + 메뉴)
 const input = new Input();
@@ -61,7 +62,8 @@ const setMode = (automapOn) => {
   $canvas.hidden = !automapOn;
   $mapOpts.hidden = !automapOn;
   $mode.textContent = automapOn ? '3D 화면 (Tab)' : '오토맵 (Tab)';
-  if (automapOn) { skipUnlockPause = true; document.exitPointerLock?.(); resizeAutomap(); automap.fit(); }
+  touch?.setAutomap(automapOn);
+  if (automapOn) { skipUnlockPause = true; document.exitPointerLock?.(); resizeAutomap(); }
 };
 
 // ---------- 소리 / 음악 ----------
@@ -118,6 +120,7 @@ const openMap = (name, carry = null, saved = null) => {
     mapName = name;
     appState = 'play';
     automap.setLevel(level, game.player);
+    $follow.checked = true;
     window.level = level; window.game = game; window.player = game.player; // 콘솔 디버깅용
     $mapSel.value = name;
     $overlay.hidden = true;
@@ -127,6 +130,7 @@ const openMap = (name, carry = null, saved = null) => {
       `things ${level.things.length} (표시 ${game.mobjs.length}) · segs ${level.segs.length} · 서브섹터 ${level.subsectors.length} · 노드 ${level.nodes.length}`;
     if (game.unknownThings.size) console.warn('아직 모르는 thing 종류:', Object.fromEntries(game.unknownThings));
     updateMusic();
+    touch?.showHelpOnce();
   } catch (err) {
     $status.textContent = `${name} 로드 실패: ${err.message}`;
     console.error(err);
@@ -250,7 +254,7 @@ $mapSel.addEventListener('change', () => {
 });
 $mode.addEventListener('click', () => { $mode.blur(); if (appState === 'play') setMode(!showAutomap); });
 $follow.addEventListener('change', () => { automap.follow = $follow.checked; });
-$flat.addEventListener('change', () => { automap.showFlat = $flat.checked; });
+$flat.addEventListener('change', () => { automap.cheat = $flat.checked; });
 $things.addEventListener('change', () => { automap.showThings = $things.checked; });
 $sfx.addEventListener('change', () => { if (sound) sound.sfxOn = $sfx.checked; });
 $music.addEventListener('change', () => { startAudio(); music?.setEnabled($music.checked); });
@@ -320,17 +324,39 @@ document.addEventListener('pointerlockchange', () => {
   if (appState === 'play' && menu && !menu.open && !showAutomap) openMenu();
 });
 
-// 오토맵: 팬 (드래그) / 줌 (휠)
-let dragging = false;
-$canvas.addEventListener('pointerdown', (e) => {
-  dragging = true; $canvas.classList.add('drag'); $canvas.setPointerCapture(e.pointerId);
+// 탭을 떠나거나 앱을 전환하면 일시정지 메뉴 (돌아와 보니 죽어 있는 일이 없게)
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && appState === 'play' && menu && !menu.open) openMenu();
 });
-$canvas.addEventListener('pointerup', () => { dragging = false; $canvas.classList.remove('drag'); });
+
+// 오토맵: 한 손가락/마우스 드래그 = 이동, 두 손가락 = 확대·축소(핀치), 마우스 휠 = 줌
+const mapPointers = new Map();   // pointerId → 마지막 위치
+let pinchDist = 0;
+$canvas.addEventListener('pointerdown', (e) => {
+  mapPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  $canvas.classList.add('drag'); $canvas.setPointerCapture(e.pointerId);
+  const [a, b] = [...mapPointers.values()];
+  pinchDist = mapPointers.size === 2 ? Math.hypot(a.x - b.x, a.y - b.y) : 0;   // 두 번째 손가락이 닿는 순간의 간격이 기준
+});
+const endMapPointer = (e) => {
+  mapPointers.delete(e.pointerId); pinchDist = 0;
+  if (!mapPointers.size) $canvas.classList.remove('drag');
+};
+$canvas.addEventListener('pointerup', endMapPointer);
+$canvas.addEventListener('pointercancel', endMapPointer);
 $canvas.addEventListener('pointermove', (e) => {
-  if (!dragging) return;
-  const dpr = $canvas.width / $canvas.clientWidth;
-  automap.panBy(e.movementX * dpr, e.movementY * dpr);
-  $follow.checked = automap.follow = false; // 직접 팬하면 따라가기 해제
+  const prev = mapPointers.get(e.pointerId);
+  if (!prev) return;
+  const cur = { x: e.clientX, y: e.clientY };
+  mapPointers.set(e.pointerId, cur);
+  const r = $canvas.getBoundingClientRect(), dpr = $canvas.width / r.width;
+  if (mapPointers.size === 1) automap.panBy((cur.x - prev.x) * dpr, (cur.y - prev.y) * dpr);
+  else if (mapPointers.size === 2) {
+    const [a, b] = [...mapPointers.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinchDist && d) automap.zoomAt(((a.x + b.x) / 2 - r.left) * dpr, ((a.y + b.y) / 2 - r.top) * dpr, d / pinchDist);
+    pinchDist = d;
+  } else return;
+  $follow.checked = automap.follow = false; // 직접 움직이면 따라가기 해제
 });
 $canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
@@ -348,6 +374,8 @@ if (isTouchDevice()) {
   touch = new TouchControls($stage, {
     menu: () => { startAudio(); openMenu(); },
     map: () => { if (appState === 'play') setMode(!showAutomap); },
+    follow: () => toggle($follow),
+    fit: () => $('btnFit').click(),
   });
   $stage.classList.add('is-touch');
   document.documentElement.classList.add('is-touch');
@@ -429,7 +457,7 @@ const frame = (now) => {
 
   if (wad) {
     if (appState === 'play' && game) {
-      const p = game.player, paused = menu.open;
+      const p = game.player, paused = menu.open || !!touch?.helpOpen;
       sound.listener = { x: p.x, y: p.y, angle: p.angle };
       if (touch) input.mouseDX += touch.takeTurn(dt) * 1.4;              // 화면 드래그 = 마우스처럼
       if (input.mouseDX) { if (!p.dead && !game.exited && !paused) p.turnBy(-input.mouseDX * mouseSens()); input.mouseDX = 0; }

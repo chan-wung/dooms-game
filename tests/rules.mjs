@@ -6,6 +6,10 @@ import { killMobj } from '../src/game/combat.js';
 import { saveGame, loadGame } from '../src/game/savegame.js';
 import { loadPalette, tintPalette } from '../src/gfx/palette.js';
 import { Intermission, Finale } from '../src/ui/intermission.js';
+import { Renderer } from '../src/render/renderer.js';
+import { TextureStore } from '../src/gfx/textures.js';
+import { SpriteStore } from '../src/gfx/sprites.js';
+import { Automap } from '../src/ui/automap.js';
 
 const b = fs.readFileSync(new URL('../public/wad/DOOM1.WAD', import.meta.url));
 const wad = new Wad(b.buffer.slice(b.byteOffset, b.byteOffset + b.length));
@@ -53,6 +57,31 @@ for (const [skill, expectRespawn] of [[5, true], [3, false]]) {
   tick(g, 8000);
   const reborn = g.mobjs.find((m) => m !== z && m.type === 3004 && m.spawnX === sx && m.spawnY === sy && m.health > 0);
   ok(`skill ${skill}: 시간이 지나면 ${expectRespawn ? '부활' : '그대로 시체'}`, expectRespawn ? !!reborn && z.removed : !reborn && !z.removed);
+}
+
+// ---------- 오토맵: 본 선만 (원작 규칙) ----------
+{
+  const g = new Game(loadLevel(wad, 'E1M1'), 3, 1), lvl = g.level, p = g.player;
+  const am = new Automap({ getContext: () => ({}), width: 640, height: 480 });
+  am.setLevel(lvl, p);
+  ok('오토맵: 처음에는 아무 선도 안 본 상태', lvl.linedefs.every((l) => !l.mapped));
+  const wall = lvl.linedefs.find((l) => !l.left);
+  ok('오토맵: 안 본 벽은 안 그림', am.lineColor(wall) === null);
+  const gfx = { palette: loadPalette(wad), textures: new TextureStore(wad), sprites: new SpriteStore(wad) };
+  new Renderer(gfx).render(lvl, g.player.view(0), g.mobjs);
+  const seen = lvl.linedefs.filter((l) => l.mapped).length;
+  ok('오토맵: 화면에 그려진 선이 본 선으로 표시됨', seen > 5 && seen < lvl.linedefs.length / 2, `(${seen}/${lvl.linedefs.length})`);
+  const w2 = lvl.linedefs.find((l) => !l.left && l.mapped);
+  ok('오토맵: 본 벽은 빨강', am.lineColor(w2) === '#fc0000');
+  const unseen = lvl.linedefs.find((l) => !l.left && !l.mapped);
+  p.powers.automap = true; ok('오토맵: 컴퓨터 지도는 안 본 선도 회색으로', am.lineColor(unseen) === '#8a8a8a');
+  p.powers.automap = false; am.cheat = true; ok('오토맵: 전체 보기(디버그)는 모든 선', am.lineColor(unseen) === '#fc0000');
+  am.cheat = false;
+  const secret = lvl.linedefs.find((l) => l.flags & 0x20 && l.left);
+  if (secret) { secret.mapped = true; ok('오토맵: 비밀 문은 벽처럼 보임', am.lineColor(secret) === '#fc0000'); }
+  // 저장/불러오기에도 이어진다
+  const copy = loadGame(loadLevel(wad, 'E1M1'), 3, JSON.parse(JSON.stringify(saveGame(g))));
+  ok('오토맵: 본 선 기록이 세이브에 들어감', copy.level.linedefs.filter((l) => l.mapped).length === lvl.linedefs.filter((l) => l.mapped).length);
 }
 
 // ---------- 점수 화면 (원작 wi_stuff 규칙) ----------
