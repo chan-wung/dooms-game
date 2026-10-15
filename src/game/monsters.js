@@ -1,6 +1,7 @@
 import { sectorAt } from '../render/bsp.js';
 import { GRAVITY, MAXMOVE, STOPSPEED, FRICTION } from './physics.js';
 import { normAngle, spread, splitMove } from './util.js';
+import { Mobj } from './mobj.js';
 import {
   MELEE_RANGE, MISSILE_RANGE, approxDist, checkSight, aimLineAttack, lineAttack, damageMobj, radiusAttack,
 } from './combat.js';
@@ -291,6 +292,24 @@ function moveMissile(game, m) {
   else if (m.z + m.height > m.ceilz) {
     if (m.sector.ceilingTex === 'F_SKY1') game.removeMobj(m); else explodeMissile(game, m);
   }
+}
+
+// ---------- 악몽 난이도: 시체가 원래 자리에서 되살아난다 (원작 P_NightmareRespawn) ----------
+const RESPAWN_AFTER = 12 * 35;   // 쓰러진 뒤 최소 12초
+
+/** 시체 m 을 매 tic 부른다: 12초가 지나면 32tic 마다 약 2% 확률로, 자리가 비어 있을 때 부활 */
+export function nightmareRespawn(game, m) {
+  if (++m.moveCount < RESPAWN_AFTER || (game.time & 31) || game.rnd() > 4) return;
+  const { spawnX: x, spawnY: y } = m, sec = sectorAt(game.level, x, y);
+  if (game.physics.check(x, y, sec.floorHeight, m.info.height, m.info.radius, { monster: true }).blocked) return;   // 누가 서 있다
+
+  game.playSound('TELEPT', m);
+  const reborn = new Mobj(m.type, m.info, x, y, m.spawnAngle, sec);
+  reborn.spawnAmbush = reborn.ambush = m.spawnAmbush;
+  reborn.reaction = 18;
+  game.addMobj(reborn);
+  game.playSound('TELEPT', reborn);
+  game.removeMobj(m);
 }
 
 // ---------- 매 tic 이동 (몬스터, 시체, 투사체, 효과) ----------

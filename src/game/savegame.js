@@ -11,16 +11,17 @@ import { sectorAt } from '../render/bsp.js';
  */
 const NONE = -1, PLAYER = -2;
 
-const GAME_FIELDS = ['time', 'secretsFound', 'secretsTotal', 'message', 'messageTics', 'itemsFound', 'killsFound', 'flashDamage', 'pickupFlash', 'hurtFace', 'lastDamage'];
+const GAME_FIELDS = ['time', 'secretsFound', 'secretsTotal', 'message', 'messageTics', 'itemsFound', 'killsFound', 'flashDamage', 'hurtFace', 'lastDamage'];
 const MOBJ_FIELDS = [
   'x', 'y', 'z', 'angle', 'momx', 'momy', 'momz', 'health', 'tics', 'stateLabel', 'stateIndex', 'frame', 'bright', 'seqIndex',
   'moveDir', 'moveCount', 'reaction', 'threshold', 'justHit', 'justAttacked', 'ambush', 'corpse', 'dropped',
   'missile', 'speed', 'damageScale', 'solid', 'shootable', 'hidden', 'height', 'floorz', 'ceilz',
+  'spawnX', 'spawnY', 'spawnAngle', 'spawnAmbush',
 ];
 const PLAYER_FIELDS = [
   'x', 'y', 'z', 'angle', 'momx', 'momy', 'momz', 'floorz', 'ceilz', 'viewheight', 'deltaViewheight', 'bob', 'viewz',
   'health', 'armor', 'armorType', 'backpack', 'readyWeapon', 'pendingWeapon', 'attackDown', 'refire', 'bulletSlope',
-  'extraLight', 'grin', 'fireTics', 'damageCount', 'attackerAngle', 'dead', 'noclip', 'reaction', 'useHeld',
+  'extraLight', 'grin', 'fireTics', 'damageCount', 'bonusCount', 'attackerAngle', 'dead', 'noclip', 'reaction', 'useHeld',
 ];
 const copy = (o) => JSON.parse(JSON.stringify(o));
 

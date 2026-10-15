@@ -4,7 +4,7 @@ import { Player } from './player.js';
 import { Specials } from './specials.js';
 import { Mobj, spawnMobjs, kindInfo } from './mobj.js';
 import { touchSpecial } from './items.js';
-import { ACTIONS, moveMobj } from './monsters.js';
+import { ACTIONS, moveMobj, nightmareRespawn } from './monsters.js';
 import { setupWeapons } from './weapons.js';
 import { sectorAt } from '../render/bsp.js';
 
@@ -16,6 +16,7 @@ const PICKUP_SOUND = {
 
 /** 한 레벨의 게임 상태와 35Hz 틱 진행 */
 export const TICRATE = 35;
+const BONUS_ADD = 6;     // 아이템을 주울 때마다 금색 화면 번쩍임이 늘어나는 양 (tic)
 const MAX_EFFECTS = 160; // 먼지/피가 한꺼번에 너무 많으면 오래된 것부터 지운다
 
 /** 재현 가능한 난수 (원작 P_Random 처럼 0..255). state 만 저장하면 이어서 같은 수열이 나온다 */
@@ -47,7 +48,7 @@ export class Game {
     this.time = 0;
     this.secretsFound = 0; this.secretsTotal = 0;
     this.message = ''; this.messageTics = 0;
-    this.flashDamage = 0; this.pickupFlash = 0; this.hurtFace = 0;
+    this.flashDamage = 0; this.hurtFace = 0;
     this.exited = null;       // { secret } — 출구에 닿으면 설정
     this.specials.spawn();
 
@@ -112,6 +113,7 @@ export class Game {
   }
 
   moveMobj(m) { moveMobj(this, m); }
+  nightmareRespawn(m) { nightmareRespawn(this, m); }
 
   /** 플레이어가 닿은 아이템 줍기: 상자가 겹치고 높이가 맞으면 (바닥 -8 ~ 키 56) */
   checkPickups() {
@@ -126,7 +128,7 @@ export class Game {
         if (m.info.countItem) this.itemsFound++;
         this.playSound(PICKUP_SOUND[m.pickup] ?? 'ITEMUP');
         this.removeMobj(m);
-        this.pickupFlash = 4;
+        p.bonusCount += BONUS_ADD;
       }
     }
   }
@@ -172,7 +174,6 @@ export class Game {
     if (this.dirty) { this.mobjs = this.mobjs.filter((o) => !o.removed); this.dirty = false; }
     if (this.messageTics > 0 && --this.messageTics === 0) this.message = '';
     if (this.flashDamage > 0) this.flashDamage--;
-    if (this.pickupFlash > 0) this.pickupFlash--;
     if (this.hurtFace > 0) this.hurtFace--;
   }
 }

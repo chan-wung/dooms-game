@@ -12,6 +12,7 @@ export class Mobj {
   constructor(type, info, x, y, angle, sector) {
     this.type = type; this.info = info;
     this.x = x; this.y = y; this.angle = angle;
+    this.spawnX = x; this.spawnY = y; this.spawnAngle = angle; this.spawnAmbush = false;   // 악몽 난이도 부활 자리
     this.sector = sector;
     this.radius = info.radius; this.height = info.height;
     this.solid = info.solid; this.pickup = info.pickup; this.fuzz = info.fuzz;
@@ -105,7 +106,8 @@ export class Mobj {
     }
     game.moveMobj(this);
     if (this.removed) return;
-    if (this.tics !== -1 && --this.tics <= 0) this.advance(game);
+    if (this.tics !== -1) { if (--this.tics <= 0) this.advance(game); }
+    else if (this.corpse && this.info.monster && game.skill === 5) game.nightmareRespawn(this);   // 악몽: 시체가 다시 일어난다
   }
 }
 
@@ -130,7 +132,7 @@ export function spawnMobjs(level, skill = 3) {
     if (!info) { unknown.set(t.type, (unknown.get(t.type) || 0) + 1); continue; }
     if (!(t.flags & skillBit(skill)) || (t.flags & 16)) continue;
     const m = new Mobj(t.type, info, t.x, t.y, (t.angle * Math.PI) / 180, sectorAt(level, t.x, t.y));
-    if (t.flags & 8) m.ambush = true;
+    if (t.flags & 8) m.ambush = m.spawnAmbush = true;
     mobjs.push(m);
   }
   return { mobjs, unknown };

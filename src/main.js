@@ -4,7 +4,7 @@ import { saveWad, loadSavedWad } from './wad/store.js';
 import { Automap } from './ui/automap.js';
 import { Renderer, SCREEN_W, SCREEN_H } from './render/renderer.js';
 import { Screen } from './render/screen.js';
-import { loadPalette } from './gfx/palette.js';
+import { loadPalette, tintPalette } from './gfx/palette.js';
 import { TextureStore } from './gfx/textures.js';
 import { SpriteStore } from './gfx/sprites.js';
 import { Hud } from './ui/hud.js';
@@ -25,7 +25,7 @@ const $bar = $('bar'), $stage = $('stage'), $help = $('help'), $hud = $('hud');
 const $view = $('view'), $canvas = $('automap'), $mapSel = $('mapSel'), $mapOpts = $('mapOpts');
 const $follow = $('optFollow'), $flat = $('optFlat'), $things = $('optThings'), $mode = $('btnMode');
 const $sfx = $('optSfx'), $music = $('optMusic');
-const $msg = $('msg'), $overlay = $('overlay'), $hurt = $('hurt');
+const $msg = $('msg'), $overlay = $('overlay');
 
 const WAD_URL = '/wad/DOOM1.WAD';
 const TIC = 1 / TICRATE;
@@ -145,7 +145,7 @@ const openMenu = () => {
 const quitToTitle = () => {
   game = null; level = null; appState = 'title';
   document.exitPointerLock?.();
-  $overlay.hidden = true; $msg.textContent = ''; $hurt.style.opacity = '0';
+  $overlay.hidden = true; $msg.textContent = '';
   menu.show('title');
   updateMusic();
 };
@@ -371,11 +371,6 @@ const mmss = (tics) => `${Math.floor(tics / TICRATE / 60)}:${String(Math.floor(t
 const updateOverlay = () => {
   const p = game.player;
   $msg.textContent = game.message;
-  // 화면 색 번쩍임: 피격 = 빨강, 아이템 획득 = 금색
-  if (p.damageCount > 0 && !p.dead) { $hurt.style.background = '#c00'; $hurt.style.opacity = String(Math.min(0.55, p.damageCount * 0.012)); }
-  else if (p.dead) { $hurt.style.background = '#800'; $hurt.style.opacity = '0.35'; }
-  else if (game.pickupFlash > 0) { $hurt.style.background = '#fc4'; $hurt.style.opacity = String(game.pickupFlash * 0.05); }
-  else $hurt.style.opacity = '0';
   if (menu.open) { $overlay.hidden = true; return; }
   if (game.exited) {
     const next = nextMapName(mapName, game.exited.secret);
@@ -391,6 +386,10 @@ const updateOverlay = () => {
   }
   if (game.exited || p.dead) { if (!endShownAt) endShownAt = performance.now(); } else endShownAt = 0;
 };
+
+// ---------- 화면 색조 (피격 빨강 · 아이템 금색 · 방사능복 초록: 원작 PLAYPAL 팔레트 교체) ----------
+let tint = 0;
+const setTint = (n) => { if (n === tint) return; tint = n; renderer.setPalette(n); hud.setPalette(n); };
 
 // ---------- 루프 ----------
 let last = performance.now(), fps = 0, hudTimer = 0;
@@ -418,6 +417,7 @@ const frame = (now) => {
         automap.draw();
       } else {
         const view = p.view(acc / TIC);
+        setTint(tintPalette(p));
         renderer.render(game.level, view, game.mobjs);
         hud.drawWeapon(screenBuf, game, view);
         hud.drawStatusBar(screenBuf, game);
@@ -439,6 +439,7 @@ const frame = (now) => {
       }
     } else {
       // 타이틀 화면
+      setTint(0);
       menu.draw(screenBuf, now);
       screen.present();
     }

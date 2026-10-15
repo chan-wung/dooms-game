@@ -3,14 +3,14 @@ import { LINE_FLAGS } from '../wad/level.js';
 import { Physics } from './physics.js';
 import {
   lowestFloorSurrounding, highestFloorSurrounding, nextHighestFloor, lowestCeilingSurrounding,
-  minSurroundingLight, maxSurroundingLight,
+  minSurroundingLight, maxSurroundingLight, nextSector,
 } from './sectors.js';
 
 /**
  * 특수 효과 (원작 p_spec.c, p_doors.c, p_plats.c, p_floor.c, p_lights.c, p_switch.c 를 단순화).
  *  - thinker: 매 tic(1/35초) tick() 을 호출받는 움직이는 것들. true 를 돌려주면 제거된다.
  *  - 선 특수 효과 번호 → { 발동 방식(걷기/사용), 반복 여부, 동작 } 표.
- * 아직 안 한 것: 총으로 작동하는 선(G1/GR), 크러셔, 도넛, 영구 리프트.
+ * 아직 안 한 것: 크러셔, 영구 리프트 (셰어웨어 맵에서는 쓰지 않는다).
  */
 const OK = 0, CRUSHED = 1, PASTDEST = 2;
 const VDOORSPEED = 2, VDOORWAIT = 150;
@@ -154,15 +154,23 @@ class Plat {
 
 // ---------- thinker: 바닥 ----------
 class FloorMover {
-  constructor(game, sec, direction, speed, dest) {
+  /** change: 도착하면 바닥 무늬와 섹터 특수를 바꾼다 (도넛) = { tex, special } */
+  constructor(game, sec, direction, speed, dest, change = null) {
     this.game = game; this.sector = sec; this.direction = direction; this.speed = speed; this.dest = dest;
+    this.changeTex = change ? change.tex : null; this.changeSpecial = change ? change.special : 0;   // 저장할 수 있게 값으로 둔다
     sec.specialData = this;
   }
 
   tick() {
-    const res = movePlane(this.game, this.sector, this.speed, this.dest, false, false, this.direction);
-    if (!(this.game.time & 7)) this.game.playSound('STNMOV', soundOrigin(this.sector));
-    if (res === PASTDEST) { this.game.playSound('PSTOP', soundOrigin(this.sector)); this.sector.specialData = null; return true; }
+    const sec = this.sector;
+    const res = movePlane(this.game, sec, this.speed, this.dest, false, false, this.direction);
+    if (!(this.game.time & 7)) this.game.playSound('STNMOV', soundOrigin(sec));
+    if (res === PASTDEST) {
+      this.game.playSound('PSTOP', soundOrigin(sec));
+      if (this.changeTex) { sec.floorTex = this.changeTex; sec.floorFlat = null; sec.special = this.changeSpecial; }
+      sec.specialData = null;
+      return true;
+    }
     return false;
   }
 }
@@ -312,6 +320,8 @@ export class Specials {
     this.def(7, 'use', false, (l) => this.buildStairs(l, 8, FLOORSPEED / 4));
     this.def(100, 'walk', false, (l) => this.buildStairs(l, 16, FLOORSPEED * 4));
     this.def(127, 'use', false, (l) => this.buildStairs(l, 16, FLOORSPEED * 4));
+    // 도넛: 가운데 기둥은 내려가고, 둘러싼 바닥은 바깥 바닥의 높이·무늬로 올라간다
+    this.def(9, 'use', false, (l) => this.doDonut(l));
     // 조명: 특수 → [밝기 지정 | 'brightest'], 걷기 1회/반복, 스위치
     const lights = [[35, 'walk', false, 35], [79, 'walk', true, 35], [139, 'use', true, 35],
       [12, 'walk', false, 'brightest'], [80, 'walk', true, 'brightest'],
@@ -525,6 +535,23 @@ export class Specials {
           dir = 1; dest = nextHighestFloor(sec, sec.floorHeight); break;
       }
       this.game.add(new FloorMover(this.game, sec, dir, speed, dest));
+    }
+    return did;
+  }
+
+  /** 도넛 (원작 EV_DoDonut): s1 = 가운데, s2 = 둘러싼 링, s3 = 링 바깥 */
+  doDonut(ld) {
+    let did = false;
+    for (const s1 of this.sectorsWithTag(ld.tag)) {
+      if (s1.specialData) continue;
+      did = true;
+      const s2 = s1.lines.map((l) => nextSector(l, s1)).find(Boolean);
+      if (!s2) continue;
+      const ring = s2.lines.find((l) => l.backSector && l.backSector !== s1 && l.frontSector === s2);
+      const s3 = ring?.backSector ?? s2.lines.map((l) => nextSector(l, s2)).find((o) => o && o !== s1);
+      if (!s3) continue;
+      this.game.add(new FloorMover(this.game, s2, 1, FLOORSPEED / 2, s3.floorHeight, { tex: s3.floorTex, special: s3.special }));
+      this.game.add(new FloorMover(this.game, s1, -1, FLOORSPEED / 2, s3.floorHeight));
     }
     return did;
   }

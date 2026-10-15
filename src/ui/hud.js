@@ -15,9 +15,12 @@ export class Hud {
   constructor(gfx, wad) {
     this.wad = wad;
     this.sprites = gfx.sprites;
+    this.palette = gfx.palette;
     this.lit = gfx.palette.lit;
     this.cache = new Map();
   }
+
+  setPalette(n) { this.lit = this.palette.litFor(n); }
 
   /** 이름으로 그래픽(패치) 얻기 (없으면 null) */
   patch(name) {

@@ -68,7 +68,7 @@ export function touchSpecial(game, p, m) {
     // 파워업
     case 'invulnerability': p.powers.invuln = POWER_TICS.invuln; say('Invulnerability!'); return true;
     case 'berserk':
-      giveBody(p, 100); p.powers.berserk = true; p.pendingWeapon = 'fist'; say('Berserk!');
+      giveBody(p, 100); p.powers.berserk = 1; p.pendingWeapon = 'fist'; say('Berserk!');
       return true;
     case 'invisibility': p.powers.invis = POWER_TICS.invis; say('Partial Invisibility'); return true;
     case 'radsuit': p.powers.radsuit = POWER_TICS.radsuit; say('Radiation Shielding Suit'); return true;

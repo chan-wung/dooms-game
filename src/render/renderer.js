@@ -50,6 +50,7 @@ const bound = (y) => {
 export class Renderer {
   /** @param {{palette: {lit: Uint32Array[]}, textures: import('../gfx/textures.js').TextureStore}} gfx */
   constructor(gfx, frame = null) {
+    this.palette = gfx.palette;
     this.lit = gfx.palette.lit;
     this.textures = gfx.textures;
     this.sprites = gfx.sprites;
@@ -70,6 +71,9 @@ export class Renderer {
    * @param view  { x, y, angle(라디안, 반시계 +), z(눈높이), colormap? }
    * @param mobjs 그릴 thing 목록 (스프라이트)
    */
+  /** 화면 색조 (PLAYPAL 번호: 피격 빨강, 아이템 금색 …) */
+  setPalette(n) { this.lit = this.palette.litFor(n); }
+
   render(level, view, mobjs = []) {
     this.level = level;
     this.px = view.x; this.py = view.y; this.eyeZ = view.z;

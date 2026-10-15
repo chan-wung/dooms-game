@@ -28,7 +28,6 @@
                      display: grid; place-items: center; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   .is-touch #view { width: min(100vw, calc(100dvh * 4 / 3)); border: 0; }
   #msg { position: absolute; top: 8px; left: 12px; color: #ffd23c; font-size: 14px; text-shadow: 1px 1px 0 #000; pointer-events: none; }
-  #hurt { position: absolute; inset: 0; background: #c00; opacity: 0; pointer-events: none; }
   #overlay { position: absolute; inset: 0 0 auto 0; margin: 15% auto 0; width: min(80%, 420px); padding: 20px;
              background: rgba(0,0,0,.78); border: 1px solid #555; text-align: center; line-height: 1.6; pointer-events: none; }
   #overlay b { color: var(--accent); font-size: 22px; font-weight: 400; }
@@ -81,7 +80,6 @@
   <div id="stage" hidden>
     <canvas id="view"></canvas>
     <canvas id="automap" hidden></canvas>
-    <div id="hurt"></div>
     <div id="msg"></div>
     <div id="overlay" hidden></div>
     <div id="hud"></div>

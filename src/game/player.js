@@ -35,8 +35,8 @@ export class Player {
     this.attackDown = false; this.refire = 0; this.bulletSlope = 0; this.cmd = null;
     this.extraLight = 0;                      // 총구 화염으로 잠깐 밝아짐
     this.grin = 0; this.fireTics = 0;           // 얼굴 표정용 (무기를 주운 직후 / 계속 쏘는 시간)
-    this.damageCount = 0; this.attacker = null; this.attackerAngle = 0; this.mass = 100;
-    this.powers = { invuln: 0, invis: 0, radsuit: 0, lightamp: 0, berserk: false, automap: false };
+    this.damageCount = 0; this.bonusCount = 0; this.attacker = null; this.attackerAngle = 0; this.mass = 100;
+    this.powers = { invuln: 0, invis: 0, radsuit: 0, lightamp: 0, berserk: 0, automap: false };   // berserk: 먹은 뒤 지난 tic (0 = 없음)
     this.dead = false; this.noclip = false;
     this.reaction = 0;      // 텔레포트 직후 잠깐 못 움직임
     this.useHeld = false;
@@ -140,6 +140,7 @@ export class Player {
 
     // 파워업 시간 감소
     for (const k of ['invuln', 'invis', 'radsuit', 'lightamp']) if (this.powers[k] > 0) this.powers[k]--;
+    if (this.powers.berserk) this.powers.berserk++;
 
     // ----- 입력 -----
     if (this.dead) {
@@ -172,6 +173,7 @@ export class Player {
     }
     tickWeapons(game, this, cmd);
     if (this.damageCount > 0) this.damageCount--;
+    if (this.bonusCount > 0) this.bonusCount--;
     if (this.grin > 0) this.grin--;
     this.fireTics = cmd.fire ? this.fireTics + 1 : 0;
   }
