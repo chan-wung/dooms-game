@@ -1,36 +1,188 @@
 import { sectorAt } from '../render/bsp.js';
+import { HEIGHT } from './physics.js';
 
-export const EYE_HEIGHT = 41;
-const MOVE_SPEED = 290;  // 맵 유닛/초 (원작 걷기 속도 근처)
-const TURN_SPEED = 2.4;  // rad/초
+/**
+ * 플레이어 (원작 p_user.c / p_mobj.c 의 이동 물리를 35Hz tic 기준으로 재현).
+ *  - 방향키로 가속(추력)을 주고 마찰(0.90625/tic)로 감속하는 관성 이동
+ *  - 계단은 24 이하까지 오르고, 바닥이 없으면 중력으로 낙하
+ *  - 시야 높이: 서 있을 때 41, 걸을 때 상하 흔들림(bob), 계단/착지 시 부드럽게 보정
+ */
+export const VIEW_HEIGHT = 41;
 export const MOUSE_SENS = 0.0025;
+const GRAVITY = 1;
+const MAXMOVE = 30;
+const STOPSPEED = 0.0625;
+const FRICTION = 0.90625;
+const THRUST = 2048 / 65536;  // 명령 1당 추력 (원작: 명령값 × 2048 / 65536)
+const MAXBOB = 16;
 
-/** 시작점에서 플레이어 생성. angle 은 라디안(반시계 +), z 는 눈높이 */
-export const createPlayer = (level) => {
-  const s = level.playerStart;
-  const p = { x: s?.x ?? 0, y: s?.y ?? 0, angle: ((s?.angle ?? 0) * Math.PI) / 180, z: 0, sector: null };
-  updateSector(p, level);
-  return p;
-};
+export class Player {
+  constructor(level) {
+    const s = level.playerStart;
+    this.x = s?.x ?? 0; this.y = s?.y ?? 0;
+    this.angle = ((s?.angle ?? 0) * Math.PI) / 180;
+    this.momx = 0; this.momy = 0; this.momz = 0;
+    this.sector = sectorAt(level, this.x, this.y);
+    this.z = this.sector.floorHeight;                 // 발 높이
+    this.floorz = this.sector.floorHeight; this.ceilz = this.sector.ceilingHeight;
+    this.viewheight = VIEW_HEIGHT; this.deltaViewheight = 0; this.bob = 0;
+    this.viewz = this.z + VIEW_HEIGHT;
+    this.health = 100; this.armor = 0;
+    this.keys = { blue: false, yellow: false, red: false };
+    this.dead = false; this.noclip = false;
+    this.reaction = 0;      // 텔레포트 직후 잠깐 못 움직임
+    this.useHeld = false;
+    this.snapshot();
+  }
 
-const updateSector = (p, level) => {
-  p.sector = sectorAt(level, p.x, p.y);
-  p.z = p.sector.floorHeight + EYE_HEIGHT;
-};
+  snapshot() { this.prevX = this.x; this.prevY = this.y; this.prevViewz = this.viewz; this.prevAngle = this.angle; }
 
-/** 충돌 없는 이동 (Phase 4에서 BLOCKMAP 충돌/물리로 교체). mouseDX: 이번 프레임 마우스 이동량(px) */
-export const updatePlayer = (p, level, dt, keys, mouseDX = 0) => {
-  p.angle -= mouseDX * MOUSE_SENS;
-  if (keys.ArrowLeft) p.angle += TURN_SPEED * dt;
-  if (keys.ArrowRight) p.angle -= TURN_SPEED * dt;
+  /** tic 사이를 보간한 시점 (alpha: 0..1) */
+  view(alpha) {
+    return {
+      x: this.prevX + (this.x - this.prevX) * alpha,
+      y: this.prevY + (this.y - this.prevY) * alpha,
+      z: this.prevViewz + (this.viewz - this.prevViewz) * alpha,
+      angle: this.prevAngle + (this.angle - this.prevAngle) * alpha,
+    };
+  }
 
-  const fx = Math.cos(p.angle), fy = Math.sin(p.angle);
-  let mx = 0, my = 0;
-  if (keys.KeyW || keys.ArrowUp) { mx += fx; my += fy; }
-  if (keys.KeyS || keys.ArrowDown) { mx -= fx; my -= fy; }
-  if (keys.KeyD) { mx += fy; my -= fx; }   // 오른쪽 = (sin, -cos)
-  if (keys.KeyA) { mx -= fy; my += fx; }
-  const len = Math.hypot(mx, my);
-  if (len > 0) { p.x += (mx / len) * MOVE_SPEED * dt; p.y += (my / len) * MOVE_SPEED * dt; }
-  updateSector(p, level);
-};
+  /** 마우스 회전: 보간에 영향 없이 즉시 반영 */
+  turnBy(delta) { this.angle += delta; this.prevAngle += delta; }
+
+  damage(n, game) {
+    if (this.dead) return;
+    this.health -= n;
+    game.flashDamage = 6;
+    if (this.health <= 0) { this.health = 0; this.dead = true; game.say('YOU DIED  —  R 키로 다시 시작'); }
+  }
+
+  teleportTo(game, x, y, angle) {
+    this.x = x; this.y = y; this.angle = angle;
+    this.momx = this.momy = this.momz = 0;
+    this.sector = sectorAt(game.level, x, y);
+    this.z = this.floorz = this.sector.floorHeight; this.ceilz = this.sector.ceilingHeight;
+    this.reaction = 18;
+    this.viewz = this.z + this.viewheight;
+    this.snapshot();
+  }
+
+  /**
+   * 한 tic 진행. cmd = { forward, side, turn, use } (원작 명령 단위: 걷기 25/24, 달리기 50/40)
+   */
+  tick(game, cmd) {
+    this.snapshot();
+    const { physics, specials } = game;
+
+    // 현재 위치의 바닥/천장 (움직이는 바닥/문 반영)
+    const r = physics.check(this.x, this.y, this.z);
+    this.floorz = r.floorz; this.ceilz = r.ceilz;
+    this.sector = sectorAt(game.level, this.x, this.y);
+    const onGround = this.z <= this.floorz;
+
+    // ----- 입력 -----
+    if (this.dead) {
+      this.viewheight = Math.max(6, this.viewheight - 1);
+    } else {
+      this.angle += cmd.turn;
+      if (this.reaction > 0) this.reaction--;
+      else if (onGround || this.noclip) {
+        const c = Math.cos(this.angle), s = Math.sin(this.angle);
+        this.momx += cmd.forward * THRUST * c + cmd.side * THRUST * s;   // 오른쪽 = (sin, -cos)
+        this.momy += cmd.forward * THRUST * s - cmd.side * THRUST * c;
+      }
+      if (cmd.use && !this.useHeld) specials.useLines(this);
+      this.useHeld = cmd.use;
+      specials.playerInSpecialSector(this);
+    }
+
+    // ----- 이동 -----
+    const ox = this.x, oy = this.y;
+    this.moveXY(game, cmd);
+    if (this.x !== ox || this.y !== oy) specials.crossLines(this, ox, oy);
+    this.moveZ();
+    this.calcHeight(game);
+  }
+
+  moveXY(game, cmd) {
+    const clamp = (v) => (v > MAXMOVE ? MAXMOVE : v < -MAXMOVE ? -MAXMOVE : v);
+    this.momx = clamp(this.momx); this.momy = clamp(this.momy);
+
+    if (this.momx !== 0 || this.momy !== 0) {
+      const x0 = this.x, y0 = this.y;
+      if (this.noclip) {
+        this.x += this.momx; this.y += this.momy;
+        this.sector = sectorAt(game.level, this.x, this.y);
+        this.floorz = this.sector.floorHeight; this.ceilz = this.sector.ceilingHeight;
+      } else {
+        // 한 번에 MAXMOVE/2 보다 크게 움직이면 반으로 나눠 이동 (벽 통과 방지)
+        let mx = this.momx, my = this.momy, blocked = false;
+        do {
+          let px, py;
+          if (Math.abs(mx) > MAXMOVE / 2 || Math.abs(my) > MAXMOVE / 2) { px = mx / 2; py = my / 2; mx /= 2; my /= 2; }
+          else { px = mx; py = my; mx = my = 0; }
+          if (!game.physics.tryMove(this, this.x + px, this.y + py)) {
+            blocked = true;
+            game.physics.slideMove(this, px, py);
+          }
+        } while (mx !== 0 || my !== 0);
+        if (blocked) { this.momx = this.x - x0; this.momy = this.y - y0; } // 벽에 막힌 만큼 운동량 감소
+      }
+    }
+
+    if (this.z > this.floorz && !this.noclip) return; // 공중에서는 마찰 없음
+    const idle = !cmd.forward && !cmd.side;
+    if (Math.abs(this.momx) < STOPSPEED && Math.abs(this.momy) < STOPSPEED && idle) {
+      this.momx = this.momy = 0;
+    } else {
+      this.momx *= FRICTION; this.momy *= FRICTION;
+    }
+  }
+
+  moveZ() {
+    if (this.noclip) { this.z = this.floorz; this.momz = 0; return; }
+    // 바닥이 올라와 있으면 올라서되, 시야는 부드럽게 따라오게 함
+    if (this.z < this.floorz) {
+      this.viewheight -= this.floorz - this.z;
+      this.deltaViewheight = (VIEW_HEIGHT - this.viewheight) / 8;
+      this.z = this.floorz;
+    }
+    this.z += this.momz;
+    if (this.z <= this.floorz) {
+      if (this.momz < 0) {
+        if (this.momz < -GRAVITY * 8) this.deltaViewheight = this.momz / 8; // 세게 착지하면 시야가 꺼짐
+        this.momz = 0;
+      }
+      this.z = this.floorz;
+    } else if (this.momz === 0) {
+      this.momz = -GRAVITY * 2;
+    } else {
+      this.momz -= GRAVITY;
+    }
+    if (this.z + HEIGHT > this.ceilz) {
+      if (this.momz > 0) this.momz = 0;
+      this.z = this.ceilz - HEIGHT;
+    }
+  }
+
+  calcHeight(game) {
+    this.bob = Math.min(MAXBOB, (this.momx * this.momx + this.momy * this.momy) / 4);
+    if (this.dead) { this.viewz = this.z + this.viewheight; return; }
+    if (this.z > this.floorz) { this.viewz = this.z + VIEW_HEIGHT; return; } // 공중
+
+    const phase = ((409 * game.time) & 8191) / 8192 * Math.PI * 2;
+    const bobOffset = (this.bob / 2) * Math.sin(phase);
+
+    this.viewheight += this.deltaViewheight;
+    if (this.viewheight > VIEW_HEIGHT) { this.viewheight = VIEW_HEIGHT; this.deltaViewheight = 0; }
+    if (this.viewheight < VIEW_HEIGHT / 2) {
+      this.viewheight = VIEW_HEIGHT / 2;
+      if (this.deltaViewheight <= 0) this.deltaViewheight = 1;
+    }
+    if (this.deltaViewheight) {
+      this.deltaViewheight += 0.25;
+      if (!this.deltaViewheight) this.deltaViewheight = 1;
+    }
+    this.viewz = Math.min(this.z + this.viewheight + bobOffset, this.ceilz - 4);
+  }
+}

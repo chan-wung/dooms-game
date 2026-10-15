@@ -16,19 +16,24 @@
   #bar { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; font-size: 13px; flex-wrap: wrap; }
   #bar label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
   select, button { background: #1a1a1f; color: var(--txt); border: 1px solid #444; padding: 4px 8px; font: inherit; cursor: pointer; }
-  #stage { width: min(100%, 960px); }
+  #stage { width: min(100%, 960px); position: relative; }
+  #msg { position: absolute; top: 8px; left: 12px; color: #ffd23c; font-size: 14px; text-shadow: 1px 1px 0 #000; pointer-events: none; }
+  #hurt { position: absolute; inset: 0; background: #c00; opacity: 0; pointer-events: none; }
+  #overlay { position: absolute; inset: 0 0 auto 0; margin: 15% auto 0; width: min(80%, 420px); padding: 20px;
+             background: rgba(0,0,0,.78); border: 1px solid #555; text-align: center; line-height: 1.6; pointer-events: none; }
+  #overlay b { color: var(--accent); font-size: 22px; font-weight: 400; }
   #view { display: block; width: 100%; aspect-ratio: 4 / 3; background: #000; border: 1px solid #333;
           image-rendering: pixelated; cursor: crosshair; }
   #automap { display: block; width: 100%; height: 70vh; background: #000; border: 1px solid #333; cursor: grab; }
   #automap.drag { cursor: grabbing; }
   #hud { margin-top: 6px; font-size: 12px; min-height: 1.4em; }
-  .help { margin-top: 8px; font-size: 12px; }ㅈ
+  .help { margin-top: 8px; font-size: 12px; }
   .help b { color: var(--accent); font-weight: 400; }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-  <h1>doom-js · Phase 3 — 텍스처 · 조명</h1>
+  <h1>doom-js · Phase 4 — 충돌 · 문 · 리프트</h1>
   <div id="drop">
     <p>public/wad/DOOM1.WAD 를 찾지 못하면 여기에 WAD 파일을 드롭하거나 선택하세요</p>
     <input type="file" id="file" accept=".wad,.WAD">
@@ -47,10 +52,14 @@
   <div id="stage" hidden>
     <canvas id="view"></canvas>
     <canvas id="automap" hidden></canvas>
+    <div id="hurt"></div>
+    <div id="msg"></div>
+    <div id="overlay" hidden></div>
     <div id="hud"></div>
   </div>
   <p class="help" id="help" hidden>
-    <b>WASD</b> 이동 · <b>←/→</b> 회전 · <b>클릭</b> 마우스 시점(Esc 해제) · <b>Tab</b> 오토맵 전환 ·
+    <b>WASD</b> 이동 · <b>Shift</b> 달리기 · <b>←/→</b> 회전 · <b>E/Space</b> 사용(문·스위치) · <b>클릭</b> 마우스 시점(Esc 해제) · <b>Tab</b> 오토맵 · <b>R</b> 재시작 ·
+    디버그: <b>N</b> noclip · <b>K</b> 열쇠 전부 ·
     오토맵: <b>휠</b> 줌 · <b>드래그</b> 팬 · <b>F</b> 따라가기 · <b>T</b> Things · <b>0</b> 전체 보기
   </p>
   <script type="module" src="/src/main.js"></script>

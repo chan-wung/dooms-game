@@ -65,6 +65,7 @@ export function loadLevel(wad, mapName) {
   const sectors = Array.from({ length: count(raw.SECTORS, 26, 'SECTORS') }, (_, i) => {
     const p = i * 26;
     return {
+      index: i,
       floorHeight: d.getInt16(p, true),
       ceilingHeight: d.getInt16(p + 2, true),
       floorTex: readName(raw.SECTORS, p + 4),
@@ -72,6 +73,8 @@ export function loadLevel(wad, mapName) {
       light: d.getInt16(p + 20, true),
       special: d.getInt16(p + 22, true),
       tag: d.getInt16(p + 24, true),
+      lines: [],            // 이 섹터에 접한 선 (아래에서 채움)
+      specialData: null,    // 현재 이 섹터를 움직이는 문/리프트 등
     };
   });
 
@@ -99,16 +102,29 @@ export function loadLevel(wad, mapName) {
     const p = i * 14;
     const v1 = d.getUint16(p, true), v2 = d.getUint16(p + 2, true);
     if (v1 >= vertexes.length || v2 >= vertexes.length) throw new Error(`LINEDEF ${i}: 잘못된 vertex`);
+    const a = vertexes[v1], b = vertexes[v2];
+    const right = side(d.getUint16(p + 10, true)), left = side(d.getUint16(p + 12, true));
     return {
-      v1: vertexes[v1],
-      v2: vertexes[v2],
+      index: i,
+      v1: a,
+      v2: b,
+      dx: b.x - a.x, dy: b.y - a.y,
+      minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x),
+      minY: Math.min(a.y, b.y), maxY: Math.max(a.y, b.y),
       flags: d.getUint16(p + 4, true),
       special: d.getUint16(p + 6, true),
       tag: d.getUint16(p + 8, true),
-      right: side(d.getUint16(p + 10, true)),
-      left: side(d.getUint16(p + 12, true)),
+      right,
+      left,
+      frontSector: right ? right.sector : null,
+      backSector: left ? left.sector : null,
     };
   });
+  // 섹터별 접한 선 목록 (이웃 섹터 탐색용)
+  for (const ld of linedefs) {
+    if (ld.frontSector) ld.frontSector.lines.push(ld);
+    if (ld.backSector && ld.backSector !== ld.frontSector) ld.backSector.lines.push(ld);
+  }
 
   // THINGS (10B)
   d = dv(raw.THINGS);
