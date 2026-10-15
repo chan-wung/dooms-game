@@ -373,6 +373,7 @@ const frame = (now) => {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   fps += (1 / Math.max(dt, 0.001) - fps) * 0.05;
+  if (touch) touch.show(!menu?.open);   // 메뉴가 열려 있으면 터치 오버레이가 화면 탭을 가로채지 않게 숨김
 
   if (wad) {
     if (appState === 'play' && game) {

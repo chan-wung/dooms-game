@@ -22,7 +22,8 @@
   #stage:fullscreen #view { width: min(100vw, calc(100dvh * 4 / 3)); }
   /* 모바일: 게임 화면만 전체 사용, 4:3 비율 유지(잘림 없음) */
   html.is-touch body { padding: 0; }
-  html.is-touch h1, html.is-touch #drop, html.is-touch #status, html.is-touch #help, html.is-touch #bar { display: none; }
+  /* 게임이 시작된 뒤에만 숨긴다(WAD 선택 UI는 시작 전에 보여야 함) */
+  html.is-touch body:has(#stage:not([hidden])) :is(h1, #drop, #status, #help, #bar) { display: none; }
   .is-touch #stage { position: fixed; inset: 0; width: 100vw; height: 100dvh; background: #000;
                      display: grid; place-items: center; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   .is-touch #view { width: min(100vw, calc(100dvh * 4 / 3)); border: 0; }
