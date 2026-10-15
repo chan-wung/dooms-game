@@ -27,10 +27,12 @@ export class Physics {
     this.blockmap = blockmap;
     /** check() 의 결과 (재사용 객체) */
     this.result = { floorz: 0, ceilz: 0, blocked: false, blockers: [] };
+    /** 이동을 막는 물체들 (통, 기둥, 몬스터 …). Game 이 같은 배열을 갱신해 준다 */
+    this.things = [];
   }
 
   /** (x, y) 에 키 height 인 것이 z 높이로 서 있을 수 있는가 */
-  check(x, y, z, height = HEIGHT, radius = RADIUS) {
+  check(x, y, z, height = HEIGHT, radius = RADIUS, ignore = null) {
     const r = this.result;
     r.blockers.length = 0;
     const left = x - radius, right = x + radius, bottom = y - radius, top = y + radius;
@@ -55,8 +57,16 @@ export class Physics {
       if (blocks) r.blockers.push(ld);
     });
 
+    // 물체와의 충돌: 상자끼리 겹치면 막힘 (원작은 높이를 따지지 않는다)
+    let thingBlocks = false;
+    for (const t of this.things) {
+      if (t === ignore) continue;
+      const reach = t.radius + radius;
+      if (Math.abs(t.x - x) < reach && Math.abs(t.y - y) < reach) { thingBlocks = true; break; }
+    }
+
     r.floorz = floorz; r.ceilz = ceilz;
-    r.blocked = r.blockers.length > 0 || ceilz - floorz < height || ceilz - z < height || floorz - z > STEP_HEIGHT;
+    r.blocked = thingBlocks || r.blockers.length > 0 || ceilz - floorz < height || ceilz - z < height || floorz - z > STEP_HEIGHT;
     return r;
   }
 
@@ -98,7 +108,11 @@ export class Physics {
           sy: (ld.dy * (rx * ld.dx + ry * ld.dy)) / (len * len),
         };
       }).sort((a, b) => b.n - a.n);
-      if (!cands.length) return;
+      if (!cands.length) {
+        // 선이 아니라 물체에 막힌 경우(원작의 stairstep): 축마다 따로 움직여 본다
+        if (!this.tryMove(mo, mo.x, mo.y + dy)) this.tryMove(mo, mo.x + dx, mo.y);
+        return;
+      }
 
       // 모서리에서는 선 두 개가 동시에 막으므로, 실제로 갈 수 있는 쪽으로 미끄러지는 것을 고른다
       let pick = cands[0];

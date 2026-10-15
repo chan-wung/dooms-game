@@ -5,6 +5,7 @@ import { Renderer } from './render/renderer.js';
 import { Screen } from './render/screen.js';
 import { loadPalette } from './gfx/palette.js';
 import { TextureStore } from './gfx/textures.js';
+import { SpriteStore } from './gfx/sprites.js';
 import { Game, TICRATE } from './game/game.js';
 import { MOUSE_SENS } from './game/player.js';
 
@@ -67,7 +68,8 @@ const openMap = (name) => {
     acc = 0;
     $status.textContent =
       `${name} — 정점 ${level.vertexes.length} · 선 ${level.linedefs.length} · 섹터 ${level.sectors.length} · ` +
-      `things ${level.things.length} · segs ${level.segs.length} · 서브섹터 ${level.subsectors.length} · 노드 ${level.nodes.length}`;
+      `things ${level.things.length} (표시 ${game.mobjs.length}) · segs ${level.segs.length} · 서브섹터 ${level.subsectors.length} · 노드 ${level.nodes.length}`;
+    if (game.unknownThings.size) console.warn('아직 모르는 thing 종류:', Object.fromEntries(game.unknownThings));
   } catch (err) {
     $status.textContent = `${name} 로드 실패: ${err.message}`;
     console.error(err);
@@ -77,7 +79,7 @@ const openMap = (name) => {
 const startWad = (buf, source) => {
   try {
     wad = new Wad(buf);
-    const gfx = { palette: loadPalette(wad), textures: new TextureStore(wad) };
+    const gfx = { palette: loadPalette(wad), textures: new TextureStore(wad), sprites: new SpriteStore(wad) };
     renderer = new Renderer(gfx);
     screen = new Screen($view, renderer.pixels);
     window.gfx = gfx;
@@ -195,12 +197,15 @@ const mmss = (tics) => `${Math.floor(tics / TICRATE / 60)}:${String(Math.floor(t
 const updateOverlay = () => {
   const p = game.player;
   $msg.textContent = game.message;
-  $hurt.style.opacity = game.flashDamage > 0 ? String(Math.min(0.5, game.flashDamage * 0.1)) : '0';
+  // 화면 색 번쩍임: 피격 = 빨강, 아이템 획득 = 금색
+  if (game.flashDamage > 0) { $hurt.style.background = '#c00'; $hurt.style.opacity = String(Math.min(0.5, game.flashDamage * 0.1)); }
+  else if (game.pickupFlash > 0) { $hurt.style.background = '#fc4'; $hurt.style.opacity = String(game.pickupFlash * 0.05); }
+  else $hurt.style.opacity = '0';
   if (game.exited) {
     const next = nextMapName(mapName, game.exited.secret);
     $overlay.hidden = false;
     $overlay.innerHTML =
-      `<b>${mapName} 완료</b><br>시간 ${mmss(game.exited.time)} · 비밀 ${game.secretsFound}/${game.secretsTotal}<br><br>` +
+      `<b>${mapName} 완료</b><br>시간 ${mmss(game.exited.time)}<br>킬 ${game.killsFound}/${game.killsTotal} · 아이템 ${game.itemsFound}/${game.itemsTotal} · 비밀 ${game.secretsFound}/${game.secretsTotal}<br><br>` +
       (next ? `<span>Enter: ${next} 로 이동</span>` : '<span>THE END — 에피소드 클리어!</span>') + '<br><span>R: 다시 하기</span>';
   } else if (p.dead) {
     $overlay.hidden = false;
@@ -230,7 +235,7 @@ const frame = (now) => {
       automap.tick();
       automap.draw();
     } else {
-      renderer.render(game.level, p.view(acc / TIC));
+      renderer.render(game.level, p.view(acc / TIC), game.mobjs);
       screen.present();
     }
     updateOverlay();
@@ -239,10 +244,12 @@ const frame = (now) => {
     if (hudTimer <= 0) {
       hudTimer = 0.25;
       $hud.textContent =
-        `FPS ${fps.toFixed(0)} · HP ${p.health} · 위치 (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) · ` +
-        `각도 ${(((p.angle * 180) / Math.PI) % 360 + 360) % 360 | 0}° · ` +
-        `바닥 ${p.sector.floorHeight} / 천장 ${p.sector.ceilingHeight} · 비밀 ${game.secretsFound}/${game.secretsTotal}` +
-        (p.noclip ? ' · NOCLIP' : '');
+        `FPS ${fps.toFixed(0)} · HP ${p.health} · 방어구 ${p.armor} · ` +
+        `탄약 총알 ${p.ammo.clip} 샷 ${p.ammo.shell} 로켓 ${p.ammo.rocket} 셀 ${p.ammo.cell} · ` +
+        `열쇠 ${['blue', 'yellow', 'red'].filter((k) => p.keys[k]).join('/') || '-'} · ` +
+        `아이템 ${game.itemsFound}/${game.itemsTotal} · 비밀 ${game.secretsFound}/${game.secretsTotal} · ` +
+        `위치 (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) 바닥 ${p.sector.floorHeight}` +
+        `${p.noclip ? ' · NOCLIP' : ''}${p.powers.invuln > 0 ? ' · 무적' : ''}${p.powers.radsuit > 0 ? ' · 방사능복' : ''}`;
     }
   }
   requestAnimationFrame(frame);

@@ -70,7 +70,7 @@ export class TextureStore {
   makeMissing(w, h) {
     const data = new Uint8Array(w * h);
     for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) data[x * h + y] = ((x >> 3) + (y >> 3)) & 1 ? 0xb0 : 0x60;
-    return { name: '?', width: w, height: h, data };
+    return { name: '?', width: w, height: h, data, mask: new Uint8Array(w * h).fill(1) };
   }
 
   /** '-'(없음)이면 null, 정의가 없으면 체커보드 */
@@ -88,6 +88,7 @@ export class TextureStore {
   compose(name, def) {
     const { width: w, height: h } = def;
     const data = new Uint8Array(w * h); // 패치가 안 덮은 부분은 0
+    const mask = new Uint8Array(w * h); // 1 = 그려진 픽셀 (양면선 중간 텍스처의 투명 부분 판정용)
     for (const pp of def.patches) {
       const patch = this.getPatch(pp.index);
       if (!patch) continue;
@@ -97,12 +98,12 @@ export class TextureStore {
         for (const post of patch.columns[px]) {
           for (let i = 0; i < post.length; i++) {
             const y = pp.y + post.top + i;
-            if (y >= 0 && y < h) data[x * h + y] = patch.bytes[post.start + i];
+            if (y >= 0 && y < h) { data[x * h + y] = patch.bytes[post.start + i]; mask[x * h + y] = 1; }
           }
         }
       }
     }
-    return { name, width: w, height: h, data };
+    return { name, width: w, height: h, data, mask };
   }
 
   /** 64×64 flat (행 우선: data[y * 64 + x]) */

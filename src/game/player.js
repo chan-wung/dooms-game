@@ -1,5 +1,6 @@
 import { sectorAt } from '../render/bsp.js';
 import { HEIGHT } from './physics.js';
+import { newAmmo, newMaxAmmo } from './items.js';
 
 /**
  * 플레이어 (원작 p_user.c / p_mobj.c 의 이동 물리를 35Hz tic 기준으로 재현).
@@ -27,8 +28,11 @@ export class Player {
     this.floorz = this.sector.floorHeight; this.ceilz = this.sector.ceilingHeight;
     this.viewheight = VIEW_HEIGHT; this.deltaViewheight = 0; this.bob = 0;
     this.viewz = this.z + VIEW_HEIGHT;
-    this.health = 100; this.armor = 0;
+    this.health = 100; this.armor = 0; this.armorType = 0; // 방어구 종류: 1 = 초록(1/3 흡수), 2 = 파랑(1/2 흡수)
     this.keys = { blue: false, yellow: false, red: false };
+    this.ammo = newAmmo(); this.maxAmmo = newMaxAmmo(); this.backpack = false;
+    this.weapons = new Set(['fist', 'pistol']); this.pendingWeapon = null; // 무기 사용은 Phase 6
+    this.powers = { invuln: 0, invis: 0, radsuit: 0, lightamp: 0, berserk: false, automap: false };
     this.dead = false; this.noclip = false;
     this.reaction = 0;      // 텔레포트 직후 잠깐 못 움직임
     this.useHeld = false;
@@ -37,21 +41,36 @@ export class Player {
 
   snapshot() { this.prevX = this.x; this.prevY = this.y; this.prevViewz = this.viewz; this.prevAngle = this.angle; }
 
-  /** tic 사이를 보간한 시점 (alpha: 0..1) */
+  /** tic 사이를 보간한 시점 (alpha: 0..1). colormap: 무적(반전)/빛 증폭 중이면 고정 컬러맵 */
   view(alpha) {
+    const p = this.powers;
+    // 효과가 끝나기 직전(4초)에는 깜빡여서 곧 끝남을 알려준다 (원작과 같은 규칙)
+    const blink = (t) => t > 128 || (t & 8);
+    let colormap;
+    if (p.invuln > 0 && blink(p.invuln)) colormap = 32;
+    else if (p.lightamp > 0 && blink(p.lightamp)) colormap = 1;
     return {
       x: this.prevX + (this.x - this.prevX) * alpha,
       y: this.prevY + (this.y - this.prevY) * alpha,
       z: this.prevViewz + (this.viewz - this.prevViewz) * alpha,
       angle: this.prevAngle + (this.angle - this.prevAngle) * alpha,
+      colormap,
     };
   }
 
   /** 마우스 회전: 보간에 영향 없이 즉시 반영 */
   turnBy(delta) { this.angle += delta; this.prevAngle += delta; }
 
+  /** 데미지: 무적이면 무시, 방어구가 일부 흡수 (원작 P_DamageMobj) */
   damage(n, game) {
-    if (this.dead) return;
+    if (this.dead || this.powers.invuln > 0) return;
+    if (this.armorType) {
+      let saved = Math.floor(n / (this.armorType === 1 ? 3 : 2));
+      if (this.armor <= saved) { saved = this.armor; this.armorType = 0; }
+      this.armor -= saved; n -= saved;
+    }
+    // E1M8 출구 바닥은 죽이지 않고 체력 1 까지만 깎는다
+    if (this.sector.special === 11 && n >= this.health) n = this.health - 1;
     this.health -= n;
     game.flashDamage = 6;
     if (this.health <= 0) { this.health = 0; this.dead = true; game.say('YOU DIED  —  R 키로 다시 시작'); }
@@ -79,6 +98,9 @@ export class Player {
     this.floorz = r.floorz; this.ceilz = r.ceilz;
     this.sector = sectorAt(game.level, this.x, this.y);
     const onGround = this.z <= this.floorz;
+
+    // 파워업 시간 감소
+    for (const k of ['invuln', 'invis', 'radsuit', 'lightamp']) if (this.powers[k] > 0) this.powers[k]--;
 
     // ----- 입력 -----
     if (this.dead) {

@@ -301,10 +301,11 @@ export class Specials {
     const sec = p.sector, g = this.game;
     if (!sec.special || p.z !== sec.floorHeight) return;
     const hit = (n) => { if ((g.time & 31) === 0) p.damage(n, g); };
+    const suit = p.powers.radsuit > 0; // 방사능복: 독극물 데미지 면제 (가끔 새어 들어오는 건 원작과 같음)
     switch (sec.special) {
-      case 5: hit(10); break;
-      case 7: hit(5); break;
-      case 4: case 16: hit(20); break;
+      case 5: if (!suit) hit(10); break;
+      case 7: if (!suit) hit(5); break;
+      case 4: case 16: if (!suit || rnd() < 5) hit(20); break;
       case 9:
         g.secretsFound++; sec.special = 0; g.say('A secret is revealed!');
         break;
