@@ -10,13 +10,16 @@ const OPTION_ROWS = [
   { patch: 'M_MSENS', key: 'sens', max: 9 },
 ];
 const THERM_X = 80;
+// 옵션 메뉴 아래쪽의 글자 줄: 맵 고르기(왼쪽/오른쪽 또는 탭으로 다음 맵) + 그 맵으로 이동
+const MAP_ROW = OPTION_ROWS.length, START_ROW = MAP_ROW + 1;
+const MAP_Y = 38 + 32 * OPTION_ROWS.length, ROW_H = 16;
 // 저장/불러오기 목록: 슬롯 0 = 자동 저장(불러오기에만), 1~ = 수동 저장 (원작 LoadDef: x=80, y=54, 줄 간격 16)
 const SLOT_X = 80, SLOT_Y = 54, SLOT_H = 16, SLOT_CELLS = 24;
 const LOAD_SLOTS = [0, 1, 2, 3, 4, 5], SAVE_SLOTS = [1, 2, 3, 4, 5];
 
 export class Menu {
   /**
-   * @param actions { hasGame(), canSave(), newGame(skill), slotNames(), loadSlot(n), saveSlot(n), quitToTitle(), settingsChanged(), play(soundName) }
+   * @param actions { maps(), currentMap(), warp(name), hasGame(), canSave(), newGame(skill), slotNames(), loadSlot(n), saveSlot(n), quitToTitle(), settingsChanged(), play(soundName) }
    */
   constructor(hud, actions, settings) {
     this.hud = hud;
@@ -24,6 +27,7 @@ export class Menu {
     this.settings = settings;          // { sfx 0..15, music 0..15, sens 0..9, skill 1..5 }
     this.state = 'title';
     this.cursor = 0;
+    this.mapIdx = 0;                   // 옵션 메뉴에서 고른 맵 (actions.maps() 의 번호)
   }
 
   get open() { return this.state !== 'closed'; }
@@ -60,11 +64,13 @@ export class Menu {
         return true;
       }
       case 'options':
-        if (up || down) { this.move(up ? -1 : 1, OPTION_ROWS.length); return true; }
+        if (up || down) { this.move(up ? -1 : 1, OPTION_ROWS.length + 2); return true; }
         if (code === 'ArrowLeft' || code === 'ArrowRight' || code === 'KeyA' || code === 'KeyD') {
-          this.adjust(this.cursor, code === 'ArrowLeft' || code === 'KeyA' ? -1 : 1);
+          const dir = code === 'ArrowLeft' || code === 'KeyA' ? -1 : 1;
+          if (this.cursor < MAP_ROW) this.adjust(this.cursor, dir); else this.cycleMap(dir);
           return true;
         }
+        if (enter && this.cursor >= MAP_ROW) { this.warpToMap(); return true; }
         if (code === 'Escape' || enter) { this.actions.play('SWTCHX'); this.show('main', 1); return true; }
         return true;
       default:
@@ -81,7 +87,11 @@ export class Menu {
     const id = MAIN_ITEMS[this.cursor].id;
     this.actions.play('PISTOL');
     if (id === 'new') this.show('skill', Math.max(0, Math.min(4, this.settings.skill - 1)));
-    else if (id === 'options') this.show('options');
+    else if (id === 'options') {
+      const i = this.actions.maps().indexOf(this.actions.currentMap());
+      this.mapIdx = Math.max(0, i);
+      this.show('options');
+    }
     else if (id === 'load') this.show('load');
     else if (id === 'save') { if (this.actions.canSave()) this.show('save'); else this.actions.play('OOF'); }
     else this.actions.quitToTitle();
@@ -97,6 +107,22 @@ export class Menu {
     else this.actions.play('SWTCHN');
   }
 
+  /** 옵션 메뉴의 맵 고르기: 목록을 돌아가며 */
+  cycleMap(dir) {
+    const n = this.actions.maps().length;
+    if (!n) return;
+    this.mapIdx = (this.mapIdx + dir + n) % n;
+    this.actions.play('STNMOV');
+  }
+
+  /** 고른 맵을 처음부터 시작 (게임 중이든 타이틀이든) */
+  warpToMap() {
+    const name = this.actions.maps()[this.mapIdx];
+    if (!name) { this.actions.play('OOF'); return; }
+    this.actions.play('PISTOL');
+    this.actions.warp(name);
+  }
+
   adjust(row, delta, absolute = null) {
     const r = OPTION_ROWS[row];
     const v = absolute ?? this.settings[r.key] + delta;
@@ -108,6 +134,13 @@ export class Menu {
   /** 마우스/터치: (x, y)는 320×200 화면 좌표. click 이면 선택까지 */
   pointer(x, y, click) {
     if (this.state === 'title') { if (click) this.key('Enter'); return; }
+    if (this.state === 'options' && y >= MAP_Y) {                   // 아래쪽 글자 줄: 맵 고르기 / 이동
+      const i = OPTION_ROWS.length + Math.floor((y - MAP_Y) / ROW_H);
+      if (x < THERM_X - 20 || x > 260 || i > START_ROW) return;
+      if (this.cursor !== i) { this.cursor = i; this.actions.play('PSTOP'); }
+      if (click) { if (i === MAP_ROW) this.cycleMap(1); else this.warpToMap(); }
+      return;
+    }
     const rows = this.state === 'main' ? { y0: 64, h: 16, n: MAIN_ITEMS.length, x0: 90, x1: 240 }
       : this.state === 'skill' ? { y0: 63, h: 16, n: SKILLS.length, x0: 40, x1: 260 }
         : this.state === 'options' ? { y0: 38, h: 32, n: OPTION_ROWS.length, x0: 60, x1: 260 }
@@ -158,7 +191,12 @@ export class Menu {
         h.blit(frame, p(r.patch), THERM_X, y);
         this.thermometer(frame, THERM_X, y + 16, r.max + 1, this.settings[r.key]);
       });
-      h.blit(frame, skull, THERM_X - 32, 38 + 32 * this.cursor - 5);
+      this.dim(frame, THERM_X - 4, MAP_Y, THERM_X + 190, MAP_Y + 2 * ROW_H + 2);      // 타이틀 그림 위에서도 글자가 읽히게
+      const maps = this.actions.maps();
+      h.text(frame, `MAP  < ${maps[this.mapIdx] ?? '-'} >`, THERM_X, MAP_Y + 4);
+      h.text(frame, 'START MAP', THERM_X, MAP_Y + ROW_H + 4);
+      const skullY = this.cursor < MAP_ROW ? 38 + 32 * this.cursor : MAP_Y + ROW_H * (this.cursor - MAP_ROW);
+      h.blit(frame, skull, THERM_X - 32, skullY - 5);
     } else if (this.state === 'load' || this.state === 'save') {
       h.blit(frame, p(this.state === 'load' ? 'M_LOADG' : 'M_SAVEG'), 72, 28);
       const names = this.actions.slotNames();
@@ -169,6 +207,11 @@ export class Menu {
       });
       h.blit(frame, skull, SLOT_X - 32, SLOT_Y + SLOT_H * this.cursor - 5);
     }
+  }
+
+  /** 사각형 영역을 어둡게 (글자 뒤 배경) */
+  dim(frame, x0, y0, x1, y1) {
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const i = y * 320 + x; frame[i] = ((frame[i] >> 2) & 0x3f3f3f) | 0xff000000; }
   }
 
   /** 슬롯 한 줄의 테두리 (원작 M_DrawSaveLoadBorder) */

@@ -182,6 +182,9 @@ const quickSave = () => { if (!menu.open && canSave()) saveSlot(lastSlot()); };
 const quickLoad = () => { if (readSlot(lastSlot())) loadSlot(lastSlot()); };
 
 const startMenuActions = () => ({
+  maps: () => wad.getMapNames(),
+  currentMap: () => (appState === 'play' ? mapName : null),
+  warp: (name) => { menu.close(); openMap(name); lockPointer(); },
   hasGame: () => appState === 'play' && !!game,
   canSave,
   slotNames: () => listSlots().map((s, n) => (s ? (n === 0 ? `AUTO  ${s.map}` : s.name) : null)),
@@ -369,6 +372,13 @@ $('btnFull').addEventListener('click', () => {
   else $stage.requestFullscreen?.().catch(() => {});
 });
 
+/** 전체화면으로 만들고 가로로 고정 (브라우저는 전체화면일 때만 화면 방향 고정을 허용한다. iOS 는 둘 다 안 되므로 직접 돌려야 한다) */
+const goLandscape = async () => {
+  try { if (!document.fullscreenElement) await $stage.requestFullscreen?.(); } catch { /* 거부됨 */ }
+  try { await window.screen.orientation?.lock?.('landscape'); } catch { /* 미지원 */ }
+};
+const portraitQuery = window.matchMedia('(orientation: portrait)');
+
 // 터치 기기: 가상 조이스틱과 버튼
 if (isTouchDevice()) {
   touch = new TouchControls($stage, {
@@ -376,14 +386,13 @@ if (isTouchDevice()) {
     map: () => { if (appState === 'play') setMode(!showAutomap); },
     follow: () => toggle($follow),
     fit: () => $('btnFit').click(),
+    fullscreen: goLandscape,
   });
   $stage.classList.add('is-touch');
   document.documentElement.classList.add('is-touch');
   // 첫 터치에서 전체화면 + 가로 고정 시도 (미지원/거부 시 무시)
-  addEventListener('pointerdown', () => {
-    if (document.fullscreenElement) return;
-    $stage.requestFullscreen?.().then(() => window.screen.orientation?.lock?.('landscape')).catch(() => {});
-  }, { once: true });
+  addEventListener('pointerdown', () => goLandscape(), { once: true });
+  $('btnLandscape').addEventListener('click', goLandscape);
   input.touch = touch;
   window.touch = touch; // 콘솔 디버깅용
 }
@@ -457,7 +466,7 @@ const frame = (now) => {
 
   if (wad) {
     if (appState === 'play' && game) {
-      const p = game.player, paused = menu.open || !!touch?.helpOpen;
+      const p = game.player, paused = menu.open || !!touch?.helpOpen || (!!touch && portraitQuery.matches);   // 세로로 들고 있으면(가로 안내 중) 멈춤
       sound.listener = { x: p.x, y: p.y, angle: p.angle };
       if (touch) input.mouseDX += touch.takeTurn(dt) * 1.4;              // 화면 드래그 = 마우스처럼
       if (input.mouseDX) { if (!p.dead && !game.exited && !paused) p.turnBy(-input.mouseDX * mouseSens()); input.mouseDX = 0; }

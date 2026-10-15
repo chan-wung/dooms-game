@@ -15,7 +15,7 @@ const TURN_STICK_PX_PER_SEC = 950; // 오른쪽 스틱을 끝까지 밀었을 �
 const capture = (el, id) => { try { el.setPointerCapture(id); } catch { /* 무시 */ } };
 
 export class TouchControls {
-  /** @param {HTMLElement} root 컨트롤이 놓일 곳(#stage), handlers = { menu(), map(), follow(), fit() } */
+  /** @param {HTMLElement} root 컨트롤이 놓일 곳(#stage), handlers = { menu(), map(), follow(), fit(), fullscreen() } */
   constructor(root, handlers) {
     this.move = { x: 0, y: 0 };   // -1..1 (y: 위가 -1 = 앞으로)
     this.look = { x: 0, y: 0 };   // 오른쪽 스틱: x 만 사용 (좌우 회전)
@@ -37,6 +37,7 @@ export class TouchControls {
       <div class="t-weapons">${[1, 2, 3, 4, 5, 6, 7].map((n) => `<button class="t-wbtn" data-w="${n}">${n}</button>`).join('')}</div>
       <button class="t-small t-menu">MENU</button>
       <button class="t-small t-map">MAP</button>
+      <button class="t-small t-full">FULL</button>
       <button class="t-small t-follow">FOLLOW</button>
       <button class="t-small t-fit">FIT</button>
       <div class="t-help" hidden>
@@ -60,6 +61,11 @@ export class TouchControls {
     el.querySelectorAll('.t-wbtn').forEach((b) => this.bindHold(b, (on) => { if (on) this.weaponQueued = Number(b.dataset.w); }));
     this.bindHold(el.querySelector('.t-menu'), (on) => { if (on) handlers.menu(); });
     this.bindHold(el.querySelector('.t-map'), (on) => { if (on) handlers.map(); });
+    const full = el.querySelector('.t-full');
+    this.bindHold(full, (on) => { if (on) handlers.fullscreen(); });
+    const syncFull = () => { full.hidden = !!document.fullscreenElement || !root.requestFullscreen; };   // 전체화면이 되면(또는 못 쓰는 기기면) 숨김
+    document.addEventListener('fullscreenchange', syncFull);
+    syncFull();
     this.bindHold(el.querySelector('.t-follow'), (on) => { if (on) handlers.follow(); });
     this.bindHold(el.querySelector('.t-fit'), (on) => { if (on) handlers.fit(); });
 
