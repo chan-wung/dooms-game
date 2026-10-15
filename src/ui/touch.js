@@ -8,7 +8,7 @@ export const isTouchDevice = () =>
   || 'ontouchstart' in window;
 
 const STICK_RADIUS = 56;
-const TURN_STICK_PX_PER_SEC = 600; // 오른쪽 스틱을 끝까지 밀었을 때의 드래그 환산 속도
+const TURN_STICK_PX_PER_SEC = 950; // 오른쪽 스틱을 끝까지 밀었을 때의 드래그 환산 속도
 
 /** 포인터 캡처(손가락이 요소 밖으로 나가도 계속 추적). 일부 환경에서 실패해도 조작은 계속되게 */
 const capture = (el, id) => { try { el.setPointerCapture(id); } catch { /* 무시 */ } };
