@@ -11,12 +11,14 @@ import { LINE_FLAGS } from '../wad/level.js';
  *  - 바닥/천장은 열 단위로 픽셀마다 월드 좌표를 역산해 flat을 샘플링한다 (visplane 없이 단순화).
  */
 export const SCREEN_W = 320;
-export const SCREEN_H = 200;
-const W = SCREEN_W, H = SCREEN_H;
+export const SCREEN_H = 200;   // 화면 전체 (3D 뷰 + 하단 상태바)
+export const VIEW_H = 168;     // 3D 뷰 높이 (아래 32줄은 상태바)
+const W = SCREEN_W, H = VIEW_H;
 const HALF_W = W / 2, HALF_H = H / 2;
 const FOCAL = HALF_W;   // 90° FOV
 const NEAR = 1;
 const SKY_FLAT = 'F_SKY1';
+const SKY_ROW_OFFSET = 100 - HALF_H; // 원작: 하늘은 화면 중앙(y=100) 기준으로 놓여, 상태바 모드에서는 16줄 아래가 보인다
 
 // ---------- 조명 테이블 (원작 r_main.c R_InitLightTables 와 동일한 식) ----------
 const LIGHTLEVELS = 16, MAXLIGHTSCALE = 48, MAXLIGHTZ = 128, NUMCOLORMAPS = 32;
@@ -36,6 +38,9 @@ const lightNum = (light, bias = 0) => {
   return n < 0 ? 0 : n >= LIGHTLEVELS ? LIGHTLEVELS - 1 : n;
 };
 
+/** 손에 든 무기의 밝기: 섹터 조명 기준 가장 밝은 거리 구간 (원작 spritelights[MAXLIGHTSCALE-1]) */
+export const pspriteColormap = (light, extra = 0) => scaleLight[lightNum(light, extra)][MAXLIGHTSCALE - 1];
+
 /** 경계 y(실수) → 그 아래가 시작되는 행 번호 [0, H] */
 const bound = (y) => {
   const r = Math.ceil(y - 0.5);
@@ -44,11 +49,11 @@ const bound = (y) => {
 
 export class Renderer {
   /** @param {{palette: {lit: Uint32Array[]}, textures: import('../gfx/textures.js').TextureStore}} gfx */
-  constructor(gfx) {
+  constructor(gfx, frame = null) {
     this.lit = gfx.palette.lit;
     this.textures = gfx.textures;
     this.sprites = gfx.sprites;
-    this.pixels = new Uint32Array(W * H);
+    this.pixels = frame ?? new Uint32Array(W * SCREEN_H); // 화면 버퍼: 위쪽 W×VIEW_H 가 3D 뷰
     this.depth = new Float32Array(W * H); // 픽셀별 시점 깊이 (스프라이트/투명 벽의 가림 판정용)
     this.ceilClip = new Int16Array(W);   // 각 열에서 아직 안 그려진 첫 행
     this.floorClip = new Int16Array(W);  // 각 열에서 아직 안 그려진 마지막 행 + 1
@@ -70,6 +75,7 @@ export class Renderer {
     this.px = view.x; this.py = view.y; this.eyeZ = view.z;
     this.cos = Math.cos(view.angle); this.sin = Math.sin(view.angle);
     this.fixed = view.colormap ?? -1;
+    this.extra = view.extraLight ?? 0;   // 총구 화염 등으로 잠깐 밝아지는 정도 (0~2)
 
     // 하늘 텍스처: 에피소드별 (E1M1 → SKY1). 360° 가 1024열이고 텍스처 폭(256)으로 반복된다
     const ep = /^E(\d)M\d$/.exec(level.name);
@@ -199,8 +205,8 @@ export class Renderer {
     const uz1 = (uBase + tA * segLen) * inv1, uz2 = (uBase + tB * segLen) * inv2;
 
     // 조명 (방향별 명암 대비: 가로 벽 -1, 세로 벽 +1)
-    const wallLights = scaleLight[lightNum(front.light, ay === by ? -1 : ax === bx ? 1 : 0)];
-    const planeLn = lightNum(front.light);
+    const wallLights = scaleLight[lightNum(front.light, (ay === by ? -1 : ax === bx ? 1 : 0) + this.extra)];
+    const planeLn = lightNum(front.light, this.extra);
     const floorFlat = front.floorFlat || (front.floorFlat = this.textures.flat(front.floorTex));
     const ceilFlat = front.ceilFlat || (front.ceilFlat = this.textures.flat(front.ceilingTex));
     const skyCeil = front.ceilingTex === SKY_FLAT;
@@ -278,7 +284,7 @@ export class Renderer {
       const st = this.sky;
       if (!st) return;
       const base = this.skyCols[x] * st.height, l0 = lit[this.fixed >= 0 ? this.fixed : 0], last = st.height - 1;
-      for (let y = y0; y < y1; y++) pixels[y * W + x] = l0[st.data[base + (y < last ? y : last)]];
+      for (let y = y0; y < y1; y++) pixels[y * W + x] = l0[st.data[base + (y + SKY_ROW_OFFSET < last ? y + SKY_ROW_OFFSET : last)]];
       return;
     }
     const k = Math.abs(planeH - this.eyeZ) * FOCAL;
@@ -327,7 +333,7 @@ export class Renderer {
       let cmap = 0;
       if (!m.bright) {
         cmap = this.fixed >= 0 ? this.fixed
-          : scaleLight[lightNum(m.sector.light)][Math.min(MAXLIGHTSCALE - 1, (scale * 16) | 0)];
+          : scaleLight[lightNum(m.sector.light, this.extra)][Math.min(MAXLIGHTSCALE - 1, (scale * 16) | 0)];
       }
       out.push({ kind: 0, depth: tz, tex, flip: ent.flip, scale, xl, z: m.z, cmap, fuzz: m.fuzz });
     }

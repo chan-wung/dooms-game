@@ -1,11 +1,12 @@
 import { Wad } from './wad/wad.js';
 import { loadLevel } from './wad/level.js';
 import { Automap } from './ui/automap.js';
-import { Renderer } from './render/renderer.js';
+import { Renderer, SCREEN_W, SCREEN_H } from './render/renderer.js';
 import { Screen } from './render/screen.js';
 import { loadPalette } from './gfx/palette.js';
 import { TextureStore } from './gfx/textures.js';
 import { SpriteStore } from './gfx/sprites.js';
+import { Hud } from './ui/hud.js';
 import { Game, TICRATE } from './game/game.js';
 import { MOUSE_SENS } from './game/player.js';
 
@@ -24,8 +25,11 @@ let wad = null, level = null, game = null, mapName = null;
 let showAutomap = false;
 let mouseDX = 0, acc = 0;
 const automap = new Automap($canvas);
-let renderer = null, screen = null; // WAD 로드 후 생성 (팔레트/텍스처 필요)
+let renderer = null, screen = null, hud = null; // WAD 로드 후 생성 (팔레트/텍스처 필요)
+const screenBuf = new Uint32Array(SCREEN_W * SCREEN_H);  // 화면 버퍼 (3D 뷰 + 상태바)
+let weaponKey = 0, mouseFire = false, wheel = 0;     // 다음 tic 에 처리할 입력
 const keys = Object.create(null);
+window.keys = keys; // 콘솔 디버깅용
 
 // ---------- 캔버스 크기 (오토맵, DPR 반영) ----------
 const resizeAutomap = () => {
@@ -80,8 +84,9 @@ const startWad = (buf, source) => {
   try {
     wad = new Wad(buf);
     const gfx = { palette: loadPalette(wad), textures: new TextureStore(wad), sprites: new SpriteStore(wad) };
-    renderer = new Renderer(gfx);
-    screen = new Screen($view, renderer.pixels);
+    renderer = new Renderer(gfx, screenBuf);
+    screen = new Screen($view, screenBuf);
+    hud = new Hud(gfx, wad);
     window.gfx = gfx;
   } catch (err) {
     wad = null;
@@ -147,6 +152,8 @@ window.addEventListener('keydown', (e) => {
     const next = nextMapName(mapName, game.exited.secret);
     if (next && wad.has(next)) openMap(next);
   }
+  const digit = /^Digit([1-7])$/.exec(e.code);
+  if (digit && !showAutomap) weaponKey = Number(digit[1]);
   if (e.code === 'KeyN' && game) { game.player.noclip = !game.player.noclip; game.say(game.player.noclip ? 'NOCLIP ON' : 'NOCLIP OFF'); }
   if (e.code === 'KeyK' && game) { Object.assign(game.player.keys, { blue: true, yellow: true, red: true }); game.say('ALL KEYS'); }
   if (showAutomap) {
@@ -160,6 +167,10 @@ window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; }
 
 // 마우스 시점 (Pointer Lock)
 $view.addEventListener('click', () => { if (document.pointerLockElement !== $view) $view.requestPointerLock(); });
+// 발사: 마우스 왼쪽(포인터 잠금 중), 휠로 무기 순환
+$view.addEventListener('mousedown', (e) => { if (e.button === 0 && document.pointerLockElement === $view) mouseFire = true; });
+window.addEventListener('mouseup', (e) => { if (e.button === 0) mouseFire = false; });
+$view.addEventListener('wheel', (e) => { e.preventDefault(); wheel += Math.sign(e.deltaY); }, { passive: false });
 document.addEventListener('mousemove', (e) => { if (document.pointerLockElement === $view) mouseDX += e.movementX; });
 
 // 오토맵: 팬 (드래그) / 줌 (휠)
@@ -189,6 +200,9 @@ const buildCmd = () => {
     side: dir(keys.KeyD, keys.KeyA) * (run ? 40 : 24),
     turn: dir(keys.ArrowLeft, keys.ArrowRight) * (run ? 1280 : 640) * TURN_UNIT,
     use: !!(keys.KeyE || keys.Space),
+    fire: !!(keys.ControlLeft || keys.ControlRight || keys.KeyF || mouseFire),
+    weapon: weaponKey,
+    cycle: Math.sign(wheel),
   };
 };
 
@@ -198,7 +212,8 @@ const updateOverlay = () => {
   const p = game.player;
   $msg.textContent = game.message;
   // 화면 색 번쩍임: 피격 = 빨강, 아이템 획득 = 금색
-  if (game.flashDamage > 0) { $hurt.style.background = '#c00'; $hurt.style.opacity = String(Math.min(0.5, game.flashDamage * 0.1)); }
+  if (p.damageCount > 0 && !p.dead) { $hurt.style.background = '#c00'; $hurt.style.opacity = String(Math.min(0.55, p.damageCount * 0.012)); }
+  else if (p.dead) { $hurt.style.background = '#800'; $hurt.style.opacity = '0.35'; }
   else if (game.pickupFlash > 0) { $hurt.style.background = '#fc4'; $hurt.style.opacity = String(game.pickupFlash * 0.05); }
   else $hurt.style.opacity = '0';
   if (game.exited) {
@@ -228,14 +243,17 @@ const frame = (now) => {
 
     // 로직은 35Hz 고정 tic, 화면은 매 프레임 (tic 사이는 위치 보간)
     acc += dt;
-    while (acc >= TIC) { game.tick(buildCmd()); acc -= TIC; }
+    while (acc >= TIC) { game.tick(buildCmd()); weaponKey = 0; wheel = 0; acc -= TIC; }
 
     if (showAutomap) {
       resizeAutomap();
       automap.tick();
       automap.draw();
     } else {
-      renderer.render(game.level, p.view(acc / TIC), game.mobjs);
+      const view = p.view(acc / TIC);
+      renderer.render(game.level, view, game.mobjs);
+      hud.drawWeapon(screenBuf, game, view);
+      hud.drawStatusBar(screenBuf, game);
       screen.present();
     }
     updateOverlay();

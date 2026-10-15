@@ -7,26 +7,24 @@
  */
 const mk = (sprite, seq, tics, o = {}) => ({
   sprite, seq, tics, bright: false, radius: 20, height: 16,
-  solid: false, ceiling: false, countItem: false, monster: false, pickup: null, fuzz: false, name: sprite, ...o,
+  solid: false, ceiling: false, countItem: false, monster: false, pickup: null, fuzz: false, shootable: false, ai: null, name: sprite, ...o,
 });
 const deco = (sprite, seq, tics, o = {}) => mk(sprite, seq, tics, { radius: 16, ...o });
 const item = (sprite, pickup, o = {}) => mk(sprite, 'A', 6, { pickup, ...o });
 const key = (sprite, pickup) => mk(sprite, 'AB', 10, { pickup, bright: 'B' });
-const mon = (sprite, seq, tics, o = {}) => mk(sprite, seq, tics, { solid: true, monster: true, height: 56, ...o });
+const mon = (sprite, seq, tics, o = {}) => mk(sprite, seq, tics, { solid: true, shootable: true, monster: true, height: 56, ...o });
 
 export const THING_INFO = {
   // ----- 몬스터 (Phase 6 에서 AI 를 붙인다: 지금은 서 있는 모습) -----
-  3004: mon('POSS', 'AB', 10, { name: 'zombieman', hp: 20 }),
-  9: mon('SPOS', 'AB', 10, { name: 'shotgun guy', hp: 30 }),
-  3001: mon('TROO', 'AB', 10, { name: 'imp', hp: 60 }),
-  3002: mon('SARG', 'AB', 10, { name: 'demon', hp: 150, radius: 30 }),
-  58: mon('SARG', 'AB', 10, { name: 'spectre', hp: 150, radius: 30, fuzz: true }),
-  3006: mon('SKUL', 'AB', 6, { name: 'lost soul', hp: 100, radius: 16, bright: true }),
-  3005: mon('HEAD', 'A', 10, { name: 'cacodemon', hp: 400, radius: 31 }),
-  3003: mon('BOSS', 'AB', 10, { name: 'baron of hell', hp: 1000, radius: 24, height: 64 }),
+  3004: mon('POSS', 'AB', 10, { name: 'zombieman', ai: 'POSS' }),
+  9: mon('SPOS', 'AB', 10, { name: 'shotgun guy', ai: 'SPOS' }),
+  3001: mon('TROO', 'AB', 10, { name: 'imp', ai: 'TROO' }),
+  3002: mon('SARG', 'AB', 10, { name: 'demon', ai: 'SARG', radius: 30 }),
+  58: mon('SARG', 'AB', 10, { name: 'spectre', ai: 'SARG', radius: 30, fuzz: true }),
+  3003: mon('BOSS', 'AB', 10, { name: 'baron of hell', ai: 'BOSS', radius: 24, height: 64 }),
 
   // ----- 통 -----
-  2035: mk('BAR1', 'AB', 6, { solid: true, radius: 10, height: 42, name: 'barrel' }),
+  2035: mk('BAR1', 'AB', 6, { solid: true, radius: 10, height: 42, name: 'barrel', ai: 'BAR1', shootable: true }),
   70: mk('FCAN', 'ABC', 4, { solid: true, radius: 10, height: 42, bright: true, name: 'burning barrel' }),
 
   // ----- 체력 / 방어구 -----

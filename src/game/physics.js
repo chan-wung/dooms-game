@@ -29,25 +29,33 @@ export class Physics {
     this.result = { floorz: 0, ceilz: 0, blocked: false, blockers: [] };
     /** 이동을 막는 물체들 (통, 기둥, 몬스터 …). Game 이 같은 배열을 갱신해 준다 */
     this.things = [];
+    /** 플레이어 (몬스터는 플레이어에게 막힌다). Game 이 설정 */
+    this.player = null;
   }
 
   /** (x, y) 에 키 height 인 것이 z 높이로 서 있을 수 있는가 */
-  check(x, y, z, height = HEIGHT, radius = RADIUS, ignore = null) {
+  /**
+   * opts: { ignore: 자기 자신(물체 충돌 제외), monster: 몬스터용 규칙(BLOCK_MONSTERS 선·플레이어에 막힘), missile: 투사체(BLOCKING 선·물체는 무시) }
+   */
+  check(x, y, z, height = HEIGHT, radius = RADIUS, opts = null) {
     const r = this.result;
     r.blockers.length = 0;
+    const ignore = opts?.ignore ?? null, monster = !!opts?.monster, missile = !!opts?.missile;
     const left = x - radius, right = x + radius, bottom = y - radius, top = y + radius;
     const sec = sectorAt(this.level, x, y);
-    let floorz = sec.floorHeight, ceilz = sec.ceilingHeight;
+    let floorz = sec.floorHeight, ceilz = sec.ceilingHeight, dropoffz = sec.floorHeight;
 
     this.blockmap.forEachLine(left, bottom, right, top, (ld) => {
       if (right <= ld.minX || left >= ld.maxX || top <= ld.minY || bottom >= ld.maxY) return;
       if (!boxStraddles(ld, left, bottom, right, top)) return;
 
       let blocks = false;
-      if (!ld.backSector || (ld.flags & LINE_FLAGS.BLOCKING)) {
+      if (!ld.backSector || (!missile && (ld.flags & LINE_FLAGS.BLOCKING)) || (monster && (ld.flags & LINE_FLAGS.BLOCK_MONSTERS))) {
         blocks = true;
       } else {
         const f = ld.frontSector, b = ld.backSector;
+        const lowFloor = Math.min(f.floorHeight, b.floorHeight);
+        if (lowFloor < dropoffz) dropoffz = lowFloor;
         const openTop = Math.min(f.ceilingHeight, b.ceilingHeight);
         const openBottom = Math.max(f.floorHeight, b.floorHeight);
         if (openTop < ceilz) ceilz = openTop;
@@ -59,21 +67,27 @@ export class Physics {
 
     // 물체와의 충돌: 상자끼리 겹치면 막힘 (원작은 높이를 따지지 않는다)
     let thingBlocks = false;
-    for (const t of this.things) {
-      if (t === ignore) continue;
-      const reach = t.radius + radius;
-      if (Math.abs(t.x - x) < reach && Math.abs(t.y - y) < reach) { thingBlocks = true; break; }
+    if (!missile) {
+      for (const t of this.things) {
+        if (t === ignore) continue;
+        const reach = t.radius + radius;
+        if (Math.abs(t.x - x) < reach && Math.abs(t.y - y) < reach) { thingBlocks = true; break; }
+      }
+      const p = this.player;
+      if (!thingBlocks && monster && p && !p.dead && Math.abs(p.x - x) < radius + 16 && Math.abs(p.y - y) < radius + 16) thingBlocks = true;
     }
 
-    r.floorz = floorz; r.ceilz = ceilz;
+    r.floorz = floorz; r.ceilz = ceilz; r.dropoffz = dropoffz;
     r.blocked = thingBlocks || r.blockers.length > 0 || ceilz - floorz < height || ceilz - z < height || floorz - z > STEP_HEIGHT;
     return r;
   }
 
   /** mo = { x, y, z, floorz, ceilz, sector }. 막히지 않으면 이동하고 true */
-  tryMove(mo, nx, ny) {
-    const r = this.check(nx, ny, mo.z);
+  tryMove(mo, nx, ny, opts = null) {
+    const r = this.check(nx, ny, mo.z, mo.height ?? HEIGHT, mo.radius ?? RADIUS, opts);
     if (r.blocked) return false;
+    // 몬스터는 낭떠러지 가장자리에 서지 않는다 (떨어지는 높이 24 초과)
+    if (opts?.monster && !opts.dropoff && r.floorz - r.dropoffz > STEP_HEIGHT) return false;
     mo.x = nx; mo.y = ny;
     mo.floorz = r.floorz; mo.ceilz = r.ceilz;
     mo.sector = sectorAt(this.level, nx, ny);

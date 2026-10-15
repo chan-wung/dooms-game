@@ -31,11 +31,11 @@ const giveArmor = (p, type) => {
   return true;
 };
 
-const giveWeapon = (p, weapon) => {
+const giveWeapon = (p, weapon, dropped = false) => {
   const ammo = WEAPON_AMMO[weapon];
-  const gaveAmmo = ammo ? giveAmmo(p, ammo, 2) : false;
+  const gaveAmmo = ammo ? giveAmmo(p, ammo, dropped ? 1 : 2) : false; // 떨어진 무기는 탄약이 절반
   let gaveWeapon = false;
-  if (!p.weapons.has(weapon)) { p.weapons.add(weapon); p.pendingWeapon = weapon; gaveWeapon = true; }
+  if (!p.weapons.has(weapon)) { p.weapons.add(weapon); p.pendingWeapon = weapon; p.grin = 70; gaveWeapon = true; }
   return gaveWeapon || gaveAmmo;
 };
 
@@ -76,7 +76,7 @@ export function touchSpecial(game, p, m) {
     case 'lightamp': p.powers.lightamp = POWER_TICS.lightamp; say('Light Amplification Visor'); return true;
 
     // 탄약
-    case 'clip': if (!giveAmmo(p, 'clip', 1)) return false; say('Picked up a clip.'); return true;
+    case 'clip': if (!giveAmmo(p, 'clip', m.dropped ? 0.5 : 1)) return false; say('Picked up a clip.'); return true;
     case 'clipBox': if (!giveAmmo(p, 'clip', 5)) return false; say('Picked up a box of bullets.'); return true;
     case 'shells': if (!giveAmmo(p, 'shell', 1)) return false; say('Picked up 4 shotgun shells.'); return true;
     case 'shellBox': if (!giveAmmo(p, 'shell', 5)) return false; say('Picked up a box of shotgun shells.'); return true;
@@ -91,12 +91,12 @@ export function touchSpecial(game, p, m) {
       return true;
 
     // 무기
-    case 'shotgun': if (!giveWeapon(p, 'shotgun')) return false; say('You got the shotgun!'); return true;
-    case 'chaingun': if (!giveWeapon(p, 'chaingun')) return false; say('You got the chaingun!'); return true;
-    case 'rocketLauncher': if (!giveWeapon(p, 'rocketLauncher')) return false; say('You got the rocket launcher!'); return true;
-    case 'plasmaGun': if (!giveWeapon(p, 'plasmaGun')) return false; say('You got the plasma gun!'); return true;
-    case 'bfg': if (!giveWeapon(p, 'bfg')) return false; say('You got the BFG9000!  Oh, yes.'); return true;
-    case 'chainsaw': if (!giveWeapon(p, 'chainsaw')) return false; say('A chainsaw!  Find some meat!'); return true;
+    case 'shotgun': if (!giveWeapon(p, 'shotgun', m.dropped)) return false; say('You got the shotgun!'); return true;
+    case 'chaingun': if (!giveWeapon(p, 'chaingun', m.dropped)) return false; say('You got the chaingun!'); return true;
+    case 'rocketLauncher': if (!giveWeapon(p, 'rocketLauncher', m.dropped)) return false; say('You got the rocket launcher!'); return true;
+    case 'plasmaGun': if (!giveWeapon(p, 'plasmaGun', m.dropped)) return false; say('You got the plasma gun!'); return true;
+    case 'bfg': if (!giveWeapon(p, 'bfg', m.dropped)) return false; say('You got the BFG9000!  Oh, yes.'); return true;
+    case 'chainsaw': if (!giveWeapon(p, 'chainsaw', m.dropped)) return false; say('A chainsaw!  Find some meat!'); return true;
 
     // 열쇠
     default: {

@@ -353,6 +353,19 @@ export class Specials {
     }
   }
 
+  /** 몬스터가 문을 연다: 열쇠 없는 일반 문(특수 1)만. 열렸으면 true */
+  monsterUse(ld, monster) {
+    if (ld.special !== 1 || (ld.flags & LINE_FLAGS.SECRET)) return false;
+    const before = ld.backSector?.specialData;
+    this.manualDoor(ld, monster);
+    return !before && !!ld.backSector?.specialData;
+  }
+
+  /** 총알이 맞으면 작동하는 선 (G1 열기 46 등). 특수 46: 문을 열어 둔다 */
+  shootLine(ld, shooter) {
+    if (ld.special === 46 && this.doDoor(ld, 'open')) this.swapSwitchTextures(ld); // 반복 작동(GR): 선은 그대로 둔다
+  }
+
   // ---------- 발동 ----------
   activate(ld, side, how) {
     if (how === 'use' && MANUAL_DOORS.has(ld.special)) { this.manualDoor(ld); return; }
@@ -379,16 +392,17 @@ export class Specials {
 
   // ---------- 문 ----------
   /** 사용 키로 여는 문 (선의 뒤쪽 섹터가 문) */
-  manualDoor(ld) {
+  manualDoor(ld, by = null) {
     const g = this.game, p = g.player;
+    const monster = by && by !== p;   // 몬스터는 열쇠 없는 일반 문만 열고, 닫지는 않는다
     const key = KEY_DOORS[ld.special];
-    if (key && !p.keys[key]) { g.say(`You need a ${key} key to open this door.`); return; }
+    if (key && (monster || !p.keys[key])) { if (!monster) g.say(`You need a ${key} key to open this door.`); return; }
 
     const sec = ld.backSector;
     if (!sec) return;
     const sp = ld.special;
     if (sec.specialData instanceof Door) {
-      if ([1, 26, 27, 28, 117].includes(sp)) sec.specialData.direction = sec.specialData.direction === -1 ? 1 : -1;
+      if (!monster && [1, 26, 27, 28, 117].includes(sp)) sec.specialData.direction = sec.specialData.direction === -1 ? 1 : -1;
       return;
     }
     if (sec.specialData) return;

@@ -1,6 +1,7 @@
 import { sectorAt } from '../render/bsp.js';
 import { HEIGHT } from './physics.js';
 import { newAmmo, newMaxAmmo } from './items.js';
+import { newPsprites, tickWeapons, requestWeapon, cycleWeapon } from './weapons.js';
 
 /**
  * 플레이어 (원작 p_user.c / p_mobj.c 의 이동 물리를 35Hz tic 기준으로 재현).
@@ -31,13 +32,26 @@ export class Player {
     this.health = 100; this.armor = 0; this.armorType = 0; // 방어구 종류: 1 = 초록(1/3 흡수), 2 = 파랑(1/2 흡수)
     this.keys = { blue: false, yellow: false, red: false };
     this.ammo = newAmmo(); this.maxAmmo = newMaxAmmo(); this.backpack = false;
-    this.weapons = new Set(['fist', 'pistol']); this.pendingWeapon = null; // 무기 사용은 Phase 6
+    this.weapons = new Set(['fist', 'pistol']);
+    this.readyWeapon = 'pistol'; this.pendingWeapon = 'pistol';
+    this.psp = newPsprites();                 // 화면에 그리는 무기 스프라이트 상태
+    this.attackDown = false; this.refire = 0; this.bulletSlope = 0; this.cmd = null;
+    this.extraLight = 0;                      // 총구 화염으로 잠깐 밝아짐
+    this.grin = 0; this.fireTics = 0;           // 얼굴 표정용 (무기를 주운 직후 / 계속 쏘는 시간)
+    this.damageCount = 0; this.attacker = null; this.attackerAngle = 0; this.mass = 100;
     this.powers = { invuln: 0, invis: 0, radsuit: 0, lightamp: 0, berserk: false, automap: false };
     this.dead = false; this.noclip = false;
     this.reaction = 0;      // 텔레포트 직후 잠깐 못 움직임
     this.useHeld = false;
     this.snapshot();
   }
+
+  // 전투 대상으로서의 속성 (몬스터가 쏘고 폭발에 휘말리는 대상)
+  get radius() { return 16; }
+  get height() { return HEIGHT; }
+  get isPlayer() { return true; }
+  get shootable() { return !this.dead; }
+  get fuzz() { return this.powers.invis > 0; }
 
   snapshot() { this.prevX = this.x; this.prevY = this.y; this.prevViewz = this.viewz; this.prevAngle = this.angle; }
 
@@ -55,6 +69,7 @@ export class Player {
       z: this.prevViewz + (this.viewz - this.prevViewz) * alpha,
       angle: this.prevAngle + (this.angle - this.prevAngle) * alpha,
       colormap,
+      extraLight: this.extraLight,
     };
   }
 
@@ -62,7 +77,7 @@ export class Player {
   turnBy(delta) { this.angle += delta; this.prevAngle += delta; }
 
   /** 데미지: 무적이면 무시, 방어구가 일부 흡수 (원작 P_DamageMobj) */
-  damage(n, game) {
+  damage(n, game, source = null) {
     if (this.dead || this.powers.invuln > 0) return;
     if (this.armorType) {
       let saved = Math.floor(n / (this.armorType === 1 ? 3 : 2));
@@ -72,6 +87,10 @@ export class Player {
     // E1M8 출구 바닥은 죽이지 않고 체력 1 까지만 깎는다
     if (this.sector.special === 11 && n >= this.health) n = this.health - 1;
     this.health -= n;
+    this.damageCount = Math.min(100, this.damageCount + n);
+    if (source) { this.attacker = source; this.attackerAngle = Math.atan2(source.y - this.y, source.x - this.x); }
+    game.lastDamage = n;
+    game.hurtFace = 35;   // 얼굴이 아픈 표정을 짓는 시간 (tic)
     game.flashDamage = 6;
     if (this.health <= 0) { this.health = 0; this.dead = true; game.say('YOU DIED  —  R 키로 다시 시작'); }
   }
@@ -124,6 +143,16 @@ export class Player {
     if (this.x !== ox || this.y !== oy) specials.crossLines(this, ox, oy);
     this.moveZ();
     this.calcHeight(game);
+
+    // 무기: 교체 요청 → 상태 진행 (발사는 무기 상태 머신 안에서 처리)
+    if (!this.dead) {
+      if (cmd.weapon) requestWeapon(this, cmd.weapon);
+      if (cmd.cycle) cycleWeapon(this, cmd.cycle);
+    }
+    tickWeapons(game, this, cmd);
+    if (this.damageCount > 0) this.damageCount--;
+    if (this.grin > 0) this.grin--;
+    this.fireTics = cmd.fire ? this.fireTics + 1 : 0;
   }
 
   moveXY(game, cmd) {
