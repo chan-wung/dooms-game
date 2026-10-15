@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>doom-js</title>
 <style>
   :root { --bg: #0b0b0d; --txt: #b8b8c0; --accent: #ff5a3c; }
@@ -16,7 +16,16 @@
   #bar { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; font-size: 13px; flex-wrap: wrap; }
   #bar label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
   select, button { background: #1a1a1f; color: var(--txt); border: 1px solid #444; padding: 4px 8px; font: inherit; cursor: pointer; }
-  #stage { width: min(100%, 960px); position: relative; }
+  body { display: flex; flex-direction: column; align-items: center; }
+  #stage { width: min(100%, calc((100dvh - 150px) * 4 / 3)); position: relative; }
+  #stage:fullscreen { width: 100vw; height: 100dvh; background: #000; display: grid; place-items: center; }
+  #stage:fullscreen #view { width: min(100vw, calc(100dvh * 4 / 3)); }
+  /* 모바일: 게임 화면만 전체 사용, 4:3 비율 유지(잘림 없음) */
+  html.is-touch body { padding: 0; }
+  html.is-touch h1, html.is-touch #drop, html.is-touch #status, html.is-touch #help, html.is-touch #bar { display: none; }
+  .is-touch #stage { position: fixed; inset: 0; width: 100vw; height: 100dvh; background: #000;
+                     display: grid; place-items: center; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  .is-touch #view { width: min(100vw, calc(100dvh * 4 / 3)); border: 0; }
   #msg { position: absolute; top: 8px; left: 12px; color: #ffd23c; font-size: 14px; text-shadow: 1px 1px 0 #000; pointer-events: none; }
   #hurt { position: absolute; inset: 0; background: #c00; opacity: 0; pointer-events: none; }
   #overlay { position: absolute; inset: 0 0 auto 0; margin: 15% auto 0; width: min(80%, 420px); padding: 20px;
@@ -56,6 +65,7 @@
   <div id="bar" hidden>
     <label>맵 <select id="mapSel"></select></label>
     <button id="btnMode">오토맵 (Tab)</button>
+    <button id="btnFull">전체화면</button>
     <label><input type="checkbox" id="optSfx" checked> 효과음</label>
     <label><input type="checkbox" id="optMusic" checked> 음악</label>
     <span id="mapOpts" hidden>

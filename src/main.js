@@ -299,6 +299,11 @@ $canvas.addEventListener('wheel', (e) => {
   automap.zoomAt((e.clientX - r.left) * dpr, (e.clientY - r.top) * dpr, e.deltaY < 0 ? 1.15 : 1 / 1.15);
 }, { passive: false });
 
+$('btnFull').addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else $stage.requestFullscreen?.().catch(() => {});
+});
+
 // 터치 기기: 가상 조이스틱과 버튼
 if (isTouchDevice()) {
   touch = new TouchControls($stage, {
@@ -306,6 +311,12 @@ if (isTouchDevice()) {
     map: () => { if (appState === 'play') setMode(!showAutomap); },
   });
   $stage.classList.add('is-touch');
+  document.documentElement.classList.add('is-touch');
+  // 첫 터치에서 전체화면 + 가로 고정 시도 (미지원/거부 시 무시)
+  addEventListener('pointerdown', () => {
+    if (document.fullscreenElement) return;
+    $stage.requestFullscreen?.().then(() => window.screen.orientation?.lock?.('landscape')).catch(() => {});
+  }, { once: true });
   window.touch = touch; // 콘솔 디버깅용
 }
 
