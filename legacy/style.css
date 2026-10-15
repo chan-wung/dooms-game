@@ -1,0 +1,26 @@
+:root {
+  --bg: #0b0b0d;
+  --txt: #b8b8c0;
+  --accent: #ff5a3c;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--txt);
+  font-family: ui-monospace, Consolas, monospace;
+}
+.stage { width: min(96vw, 960px); }
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 640 / 400;
+  background: #000;
+  image-rendering: pixelated;
+  cursor: crosshair;
+}
+.help { margin-top: 12px; font-size: 13px; text-align: center; }
+.help b { color: var(--accent); font-weight: 400; }

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>doom-js</title>
+<style>
+  :root { --bg: #0b0b0d; --txt: #b8b8c0; --accent: #ff5a3c; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { min-height: 100vh; background: var(--bg); color: var(--txt);
+         font-family: ui-monospace, Consolas, monospace; padding: 16px; }
+  h1 { font-size: 18px; color: var(--accent); font-weight: 400; margin-bottom: 12px; }
+  #drop { border: 2px dashed #444; padding: 32px 16px; text-align: center; margin-bottom: 16px; }
+  #drop.over { border-color: var(--accent); }
+  #status { margin-bottom: 12px; font-size: 14px; white-space: pre-wrap; }
+  #lumps { font-size: 12px; max-height: 60vh; overflow: auto; white-space: pre; }
+</style>
+</head>
+<body>
+  <h1>doom-js · Phase 0 — WAD 로딩</h1>
+  <div id="drop">
+    <p>public/wad/DOOM1.WAD 를 찾지 못하면 여기에 WAD 파일을 드롭하거나 선택하세요</p>
+    <input type="file" id="file" accept=".wad,.WAD">
+  </div>
+  <div id="status">로딩 중…</div>
+  <div id="lumps"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
