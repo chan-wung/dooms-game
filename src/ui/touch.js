@@ -38,6 +38,7 @@ export class TouchControls {
       <button class="t-small t-menu">MENU</button>
       <button class="t-small t-map">MAP</button>
       <button class="t-small t-full">FULL</button>
+      <button class="t-small t-mute">SOUND</button>
       <button class="t-small t-follow">FOLLOW</button>
       <button class="t-small t-fit">FIT</button>
       <div class="t-help" hidden>
@@ -48,6 +49,10 @@ export class TouchControls {
         <p><span>1~7</span> 무기 선택</p>
         <p><span>MAP</span> 오토맵 (두 손가락으로 확대·축소, 한 손가락으로 이동)</p>
         <p><span>MENU</span> 저장·불러오기·옵션</p>
+        <div class="t-opts">
+          <button class="t-opt" data-opt="muted"></button>
+          <button class="t-opt" data-opt="autoLandscape"></button>
+        </div>
         <em>화면을 탭하면 시작합니다</em>
       </div>`;
     root.appendChild(el);
@@ -71,6 +76,29 @@ export class TouchControls {
 
     this.helpEl = el.querySelector('.t-help');
     this.helpEl.addEventListener('pointerdown', (e) => { e.preventDefault(); this.hideHelp(); });
+
+    // 첫 안내 창의 옵션 토글 (누르면 창이 닫히지 않는다) + 상단 소리 버튼
+    const LABELS = {
+      muted: ['소리 끄기', (on) => (on ? '켬 (무음)' : '끔')],
+      autoLandscape: ['시작할 때 전체화면 · 가로 고정', (on) => (on ? '켬' : '끔')],
+    };
+    const mute = el.querySelector('.t-mute');
+    this.syncOpts = () => {
+      const o = handlers.getOpts();
+      el.querySelectorAll('.t-opt').forEach((b) => {
+        const [name, state] = LABELS[b.dataset.opt];
+        b.textContent = `${name} : ${state(o[b.dataset.opt])}`;
+        b.classList.toggle('on', o[b.dataset.opt]);
+      });
+      mute.textContent = o.muted ? 'MUTED' : 'SOUND';
+      mute.classList.toggle('on', o.muted);
+    };
+    const toggleOpt = (key) => { handlers.setOpt(key, !handlers.getOpts()[key]); this.syncOpts(); };
+    el.querySelectorAll('.t-opt').forEach((b) => {
+      b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); toggleOpt(b.dataset.opt); });
+    });
+    this.bindHold(mute, (on) => { if (on) toggleOpt('muted'); });
+    this.syncOpts();
   }
 
   /** 오토맵을 보는 동안: 조작 버튼을 숨기고 화면 제스처(확대·이동)를 캔버스로 넘긴다 */
@@ -85,6 +113,7 @@ export class TouchControls {
   hideHelp() {
     this.helpEl.hidden = true;
     try { localStorage.setItem(HELP_KEY, '1'); } catch { /* 무시 */ }
+    this.handlers.onHelpClosed?.();
   }
 
   get helpOpen() { return !this.helpEl.hidden; }

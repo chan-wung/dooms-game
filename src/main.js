@@ -34,7 +34,7 @@ const WAD_URL = '/wad/DOOM1.WAD';
 const TIC = 1 / TICRATE;
 
 // ---------- 설정 (브라우저에 기억) ----------
-const settings = loadSettings({ sfx: 12, music: 8, sens: 5, skill: 3, messages: 1, screenSize: 10, gamma: 0 });
+const settings = loadSettings({ sfx: 12, music: 8, sens: 5, skill: 3, messages: 1, screenSize: 10, gamma: 0, muted: 0, autoLandscape: 0 });
 const saveSettings = () => storeSettings(settings);
 
 // ---------- 상태 ----------
@@ -105,8 +105,8 @@ const applyVideo = () => {
 const applySettings = () => {
   applyVideo();
   if (sound) {
-    sound.setSfxVolume((settings.sfx / 15) * 0.9);
-    sound.setMusicVolume((settings.music / 15) * 0.8);
+    sound.setSfxVolume(settings.muted ? 0 : (settings.sfx / 15) * 0.9);
+    sound.setMusicVolume(settings.muted ? 0 : (settings.music / 15) * 0.8);
   }
   saveSettings();
 };
@@ -527,11 +527,14 @@ if (isTouchDevice()) {
     follow: () => toggle($follow),
     fit: () => $('btnFit').click(),
     fullscreen: goLandscape,
+    getOpts: () => ({ muted: !!settings.muted, autoLandscape: !!settings.autoLandscape }),
+    setOpt: (key, value) => { settings[key] = value ? 1 : 0; if (key === 'muted') startAudio(); applySettings(); },
+    onHelpClosed: () => { startAudio(); if (settings.autoLandscape) goLandscape(); },
   });
   $stage.classList.add('is-touch');
   document.documentElement.classList.add('is-touch');
-  // 첫 터치에서 전체화면 + 가로 고정 시도 (미지원/거부 시 무시)
-  addEventListener('pointerdown', () => goLandscape(), { once: true });
+  // 옵션을 켠 경우에만 첫 터치에서 전체화면 + 가로 고정 시도 (미지원/거부 시 무시)
+  addEventListener('pointerdown', () => { if (settings.autoLandscape) goLandscape(); }, { once: true });
   $('btnLandscape').addEventListener('click', goLandscape);
   input.touch = touch;
   window.touch = touch; // 콘솔 디버깅용
