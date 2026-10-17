@@ -71,6 +71,7 @@ export class MusicPlayer {
     if (this.name === name && this.timer) return;
     this.stop();
     this.name = name;
+    this.wanted = name;          // 꺼져 있는 동안 바뀐 곡도 기억했다가 켜면 튼다
     this.song = song;
     if (!song || !this.on) return;
     const out = this.getOut();
@@ -92,8 +93,8 @@ export class MusicPlayer {
 
   setEnabled(on) {
     this.on = on;
-    if (!on) { const n = this.name, s = this.song; this.stop(); this.name = null; this.pending = { n, s }; }
-    else if (this.pending) { const { n, s } = this.pending; this.pending = null; this.play(s, n); }
+    if (!on) this.stop();
+    else if (!this.timer && this.song) this.play(this.song, this.wanted);
   }
 
   /** 앞으로 0.15초 안에 올 이벤트를 미리 예약 (타이머 흔들림에 안 끊기도록) */

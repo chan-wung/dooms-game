@@ -34,7 +34,9 @@ const WAD_URL = '/wad/DOOM1.WAD';
 const TIC = 1 / TICRATE;
 
 // ---------- 설정 (브라우저에 기억) ----------
-const settings = loadSettings({ sfx: 12, music: 8, sens: 5, skill: 3, messages: 1, screenSize: 10, gamma: 0, muted: 0, autoLandscape: 0 });
+const settings = loadSettings({ sfx: 12, music: 8, sens: 5, skill: 3, messages: 1, screenSize: 10, gamma: 0, muted: 0, autoLandscape: 0, musicOn: 0, sfxOn: 0 });   // 음악·효과음은 기본으로 꺼 둔다 (위쪽 체크로 켬)
+$music.checked = !!settings.musicOn;
+$sfx.checked = !!settings.sfxOn;
 const saveSettings = () => storeSettings(settings);
 
 // ---------- 상태 ----------
@@ -325,7 +327,9 @@ const startWad = (buf, source, persist = false) => {
     screen = new Screen($view, screenBuf);
     hud = new Hud(gfx, wad);
     sound = new SoundSystem(wad);
+    sound.sfxOn = !!settings.sfxOn;
     music = new MusicPlayer(() => (sound.ensure() ? { ctx: sound.ctx, bus: sound.musicBus } : null));
+    music.setEnabled(!!settings.musicOn);
     menu = new Menu(hud, startMenuActions(), settings);
     inter = new Intermission(hud, (name) => sound.play(name));
     finale = new Finale(hud);
@@ -385,8 +389,14 @@ $mode.addEventListener('click', () => { $mode.blur(); if (appState === 'play') s
 $follow.addEventListener('change', () => { automap.follow = $follow.checked; });
 $flat.addEventListener('change', () => { automap.cheat = $flat.checked; });
 $things.addEventListener('change', () => { automap.showThings = $things.checked; });
-$sfx.addEventListener('change', () => { if (sound) sound.sfxOn = $sfx.checked; });
-$music.addEventListener('change', () => { startAudio(); music?.setEnabled($music.checked); });
+$sfx.addEventListener('change', () => {
+  settings.sfxOn = $sfx.checked ? 1 : 0; saveSettings();
+  if (sound) sound.sfxOn = $sfx.checked;
+});
+$music.addEventListener('change', () => {
+  settings.musicOn = $music.checked ? 1 : 0; saveSettings();
+  startAudio(); music?.setEnabled($music.checked);
+});
 $('btnFit').addEventListener('click', () => {
   $follow.checked = automap.follow = false;
   automap.fit();
