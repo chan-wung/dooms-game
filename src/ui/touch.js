@@ -10,6 +10,12 @@ export const isTouchDevice = () =>
 const HELP_KEY = 'doomjs.touchhelp';
 const STICK_RADIUS = 56;
 const TURN_STICK_PX_PER_SEC = 950; // 오른쪽 스틱을 끝까지 밀었을 때의 드래그 환산 속도
+/**
+ * 왼쪽 스틱의 걷는 존 / 뛰는 존: 원 안(STICK_RADIUS)은 걷기, 원 밖 고리(RUN_ZONE 만큼 더)로 끌어내면 달리기.
+ * 경계에서 걷기·달리기가 깜빡이지 않게 들어갈 때(RUN_ENTER)와 나올 때(RUN_EXIT)의 기준을 다르게 둔다.
+ */
+const RUN_ZONE = 28;
+const RUN_ENTER = STICK_RADIUS * 1.15, RUN_EXIT = STICK_RADIUS;
 
 /** 포인터 캡처(손가락이 요소 밖으로 나가도 계속 추적). 일부 환경에서 실패해도 조작은 계속되게 */
 const capture = (el, id) => { try { el.setPointerCapture(id); } catch { /* 무시 */ } };
@@ -17,7 +23,7 @@ const capture = (el, id) => { try { el.setPointerCapture(id); } catch { /* 무�
 export class TouchControls {
   /** @param {HTMLElement} root 컨트롤이 놓일 곳(#stage), handlers = { menu(), map(), follow(), fit(), fullscreen() } */
   constructor(root, handlers) {
-    this.move = { x: 0, y: 0 };   // -1..1 (y: 위가 -1 = 앞으로)
+    this.move = { x: 0, y: 0, run: false };   // -1..1 (y: 위가 -1 = 앞으로), run = 뛰는 존
     this.look = { x: 0, y: 0 };   // 오른쪽 스틱: x 만 사용 (좌우 회전)
     this.weaponQueued = 0;        // 번호 버튼으로 고른 무기
     this.fire = false;
@@ -43,7 +49,7 @@ export class TouchControls {
       <button class="t-small t-fit">FIT</button>
       <div class="t-help" hidden>
         <b>조작 방법</b>
-        <p><span>왼쪽 스틱</span> 이동</p>
+        <p><span>왼쪽 스틱</span> 걷기 · 바깥 점선까지 끌어내면 달리기</p>
         <p><span>오른쪽 스틱 · 화면 드래그</span> 둘러보기</p>
         <p><span>FIRE</span> 발사 &nbsp; <span>USE</span> 문·스위치</p>
         <p><span>1~7</span> 무기 선택</p>
@@ -58,7 +64,7 @@ export class TouchControls {
     root.appendChild(el);
     this.el = el;
 
-    this.bindStick(el.querySelector('.t-move'), el.querySelector('.t-move .t-thumb'), this.move);
+    this.bindStick(el.querySelector('.t-move'), el.querySelector('.t-move .t-thumb'), this.move, true);
     this.bindStick(el.querySelector('.t-look'), el.querySelector('.t-look .t-thumb'), this.look);
     this.bindTurn(el.querySelector('.t-turn'));
     this.bindHold(el.querySelector('.t-fire'), (on) => { this.fire = on; });
@@ -125,14 +131,25 @@ export class TouchControls {
     button.addEventListener('pointercancel', up);
   }
 
-  bindStick(base, thumb, out) {
+  /** runZone: 원 밖 고리까지 끌어낼 수 있고, 거기서는 out.run = true (왼쪽 이동 스틱) */
+  bindStick(base, thumb, out, runZone = false) {
     let id = null, cx = 0, cy = 0;
+    const setRun = (on) => {
+      if (on === out.run) return;
+      out.run = on;
+      base.classList.toggle('running', on);
+      if (on) { try { navigator.vibrate?.(15); } catch { /* 진동을 못 쓰는 기기 */ } }
+    };
     const set = (e) => {
       let dx = e.clientX - cx, dy = e.clientY - cy;
       const len = Math.hypot(dx, dy);
-      if (len > STICK_RADIUS) { dx = (dx / len) * STICK_RADIUS; dy = (dy / len) * STICK_RADIUS; }
-      thumb.style.transform = `translate(${dx}px, ${dy}px)`;
-      const nx = dx / STICK_RADIUS, ny = dy / STICK_RADIUS;
+      if (runZone) setRun(out.run ? len >= RUN_EXIT : len >= RUN_ENTER);
+      // 엄지는 뛰는 존 고리까지 따라가지만, 방향 세기는 원 반지름 기준 (원 끝 = 1)
+      const reach = runZone ? STICK_RADIUS + RUN_ZONE : STICK_RADIUS;
+      const shown = Math.min(len, reach), k = len ? shown / len : 0;
+      thumb.style.transform = `translate(${dx * k}px, ${dy * k}px)`;
+      const s = len > STICK_RADIUS ? STICK_RADIUS / len : 1;
+      const nx = (dx * s) / STICK_RADIUS, ny = (dy * s) / STICK_RADIUS;
       const dead = (v) => (Math.abs(v) < 0.2 ? 0 : v);   // 살짝 건드린 건 무시
       out.x = dead(nx); out.y = dead(ny);
     };
@@ -148,6 +165,7 @@ export class TouchControls {
     const end = (e) => {
       if (e.pointerId !== id) return;
       id = null; out.x = out.y = 0; thumb.style.transform = '';
+      if (runZone) setRun(false);
     };
     base.addEventListener('pointerup', end);
     base.addEventListener('pointercancel', end);

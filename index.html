@@ -45,6 +45,11 @@
   #touch .t-stick { position: absolute; left: 24px; bottom: 24px; width: 120px; height: 120px; border-radius: 50%;
                     background: rgba(255,255,255,.12); border: 2px solid rgba(255,255,255,.35); display: grid; place-items: center; }
   #touch .t-thumb { width: 52px; height: 52px; border-radius: 50%; background: rgba(255,255,255,.45); }
+  /* 왼쪽 스틱: 원 밖 점선 고리 = 뛰는 존 (src/ui/touch.js 의 RUN_ZONE 과 같은 28px). 들어가면 엄지가 빨개진다 */
+  #touch .t-move { left: 40px; bottom: 40px; }   /* 뛰는 존 고리까지 화면 안에 들어오게 */
+  #touch .t-move::before { content: ''; position: absolute; inset: -28px; border-radius: 50%; border: 2px dashed rgba(255,90,60,.4); pointer-events: none; }
+  #touch .t-move.running::before { border-color: rgba(255,90,60,.85); }
+  #touch .t-move.running .t-thumb { background: rgba(255,90,60,.8); }
   #touch .t-btn { position: absolute; width: 72px; height: 72px; border-radius: 50%; border: 2px solid rgba(255,255,255,.5);
                   background: rgba(255,90,60,.45); color: #fff; font: 700 13px ui-monospace, Consolas, monospace; }
   /* 오른쪽 엄지가 닿는 곳에 모은다: 스틱 바로 왼쪽에 FIRE, 스틱 바로 위에 USE */
