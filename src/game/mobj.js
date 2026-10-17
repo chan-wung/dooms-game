@@ -50,6 +50,7 @@ export class Mobj {
       this.sprite = ai.sprite;
     }
     if (ai.effect) { this.sprite = ai.sprite; this.hidden = false; }
+    if (info.hidden) this.hidden = true;   // 그리지 않는다 (아이콘 오브 신의 눈)
     this.floating = !!ai.float;   // 카코데몬·로스트 소울: 중력 없이 떠다닌다
     this.skullFly = false;        // 로스트 소울이 돌진하는 중
     this.setStateNoAction(ai.states.stand ? 'stand' : 'fly');

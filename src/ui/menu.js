@@ -268,9 +268,15 @@ export class Menu {
     return true;
   }
 
+  /** 도움말 그림: 둠1 = HELP1·HELP2 (얼티밋은 HELP1·CREDIT), 둠2 = HELP·CREDIT */
+  helpPages() {
+    const pages = ['HELP1', 'HELP2', 'HELP', 'CREDIT'].filter((n) => this.hud.patch(n)).slice(0, 2);
+    return pages.length ? pages : ['HELP1', 'HELP2'];
+  }
+
   advanceHelp() {
     this.actions.play('SWTCHN');
-    if (this.helpPage === 0) this.helpPage = 1; else this.back();
+    if (this.helpPage + 1 < this.helpPages().length) this.helpPage++; else this.back();
   }
 
   /** 마우스/터치: (x, y)는 320×200 화면 좌표. click 이면 선택까지 */
@@ -293,7 +299,7 @@ export class Menu {
   draw(frame, time) {
     const h = this.hud, p = (n) => h.patch(n);
     if (this.state === 'closed') return;
-    if (this.state === 'help') { h.blit(frame, p(this.helpPage ? 'HELP2' : 'HELP1'), 0, 0); return; }
+    if (this.state === 'help') { h.blit(frame, p(this.helpPages()[this.helpPage]), 0, 0); return; }
 
     // 게임이 없을 때는 타이틀 그림이 배경
     if (!this.actions.hasGame() || this.state === 'title') h.blit(frame, p('TITLEPIC'), 0, 0);

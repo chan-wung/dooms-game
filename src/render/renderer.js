@@ -98,9 +98,10 @@ export class Renderer {
     this.fixed = view.colormap ?? -1;
     this.extra = view.extraLight ?? 0;   // 총구 화염 등으로 잠깐 밝아지는 정도 (0~2)
 
-    // 하늘 텍스처: 에피소드별 (E1M1 → SKY1). 360° 가 1024열이고 텍스처 폭(256)으로 반복된다
-    const ep = /^E(\d)M\d$/.exec(level.name);
-    this.sky = this.textures.texture(`SKY${ep ? ep[1] : 1}`) ?? this.textures.texture('SKY1');
+    // 하늘 텍스처: 에피소드별 (E1M1 → SKY1), 둠2 는 MAP01~11 SKY1 · 12~20 SKY2 · 21~ SKY3. 360° 가 1024열이고 텍스처 폭(256)으로 반복된다
+    const ep = /^E(\d)M\d$/.exec(level.name), d2 = /^MAP(\d\d)$/.exec(level.name);
+    const skyNum = ep ? ep[1] : d2 ? (Number(d2[1]) < 12 ? 1 : Number(d2[1]) < 21 ? 2 : 3) : 1;
+    this.sky = this.textures.texture(`SKY${skyNum}`) ?? this.textures.texture('SKY1');
     if (this.sky) {
       const sw = this.sky.width;
       for (let x = 0; x < W; x++) {

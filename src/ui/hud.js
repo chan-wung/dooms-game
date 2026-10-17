@@ -167,7 +167,7 @@ export class Hud {
     // 무기 칸 (2~7): 가진 것은 노랑, 없으면 회색
     WEAPON_SLOTS.forEach((w, i) => {
       const n = i + 2;
-      const owned = p.weapons.has(w);
+      const owned = p.weapons.has(w) || (w === 'shotgun' && p.weapons.has('superShotgun'));   // 3번 칸 = 샷건 또는 슈퍼 샷건
       this.blit(frame, this.patch(`${owned ? 'STYSNUM' : 'STGNUM'}${n}`), 111 + (i % 3) * 12, 172 + Math.floor(i / 3) * 10);
     });
 

@@ -40,11 +40,20 @@ const EPISODES = [
 ];
 const STATS_X = 50, STATS_Y = 50, TIME_X = 16, TIME_Y = 200 - 32, TITLE_Y = 2;
 
+// 둠2 (원작 cpars): MAP01~32 기준 시간. 점수 화면은 지도 없이 INTERPIC 배경, 맵 이름은 CWILV00~31
+const DOOM2 = {
+  pars: [30, 90, 120, 120, 90, 150, 120, 120, 270, 90, 210, 150, 150, 150, 210, 150, 420, 150, 210, 150,
+    240, 150, 180, 150, 150, 300, 330, 420, 300, 180, 120, 30],
+  nodes: null, anims: [],
+};
+
 export const parTime = (map) => {
+  const d2 = /^MAP(\d\d)$/.exec(map);
+  if (d2) return DOOM2.pars[Number(d2[1]) - 1] ?? 0;
   const m = /^E(\d)M(\d)$/.exec(map);
   return m ? (EPISODES[Number(m[1]) - 1]?.pars?.[Number(m[2]) - 1] ?? 0) : 0;
 };
-const mapIndex = (map) => Number(/^E\dM(\d)$/.exec(map)?.[1] ?? 1) - 1;
+const mapIndex = (map) => Number(/^E\dM(\d)$/.exec(map)?.[1] ?? /^MAP(\d\d)$/.exec(map)?.[1] ?? 1) - 1;
 const pct = (n, total) => (total ? Math.floor((n * 100) / total) : 100);
 
 export class Intermission {
@@ -61,11 +70,13 @@ export class Intermission {
     this.info = info;
     this.last = mapIndex(info.map);
     this.next = info.next ? mapIndex(info.next) : null;
-    this.epsd = Number(/^E(\d)/.exec(info.map)?.[1] ?? 1) - 1;
-    this.ep = EPISODES[this.epsd] ?? EPISODES[3];
-    this.background = this.epsd <= 2 ? this.hud.patch(`WIMAP${this.epsd}`) : null;
+    this.commercial = /^MAP/.test(info.map);         // 둠2
+    this.epsd = this.commercial ? 0 : Number(/^E(\d)/.exec(info.map)?.[1] ?? 1) - 1;
+    this.ep = this.commercial ? DOOM2 : EPISODES[this.epsd] ?? EPISODES[3];
+    this.background = !this.commercial && this.epsd <= 2 ? this.hud.patch(`WIMAP${this.epsd}`) : null;
     this.background ??= this.hud.patch('INTERPIC');
-    this.hasMapScreen = !!this.ep.nodes && this.next !== null && !!this.hud.patch(`WIMAP${this.epsd}`);
+    // 다음 맵 화면: 둠1 E1~E3 은 지도 위에, 둠2 는 배경 위에 "ENTERING" 만
+    this.hasMapScreen = this.next !== null && (this.commercial || (!!this.ep.nodes && !!this.hud.patch(`WIMAP${this.epsd}`)));
     this.state = 'stats';
     this.view = 'stats';
     this.done = false;
@@ -179,9 +190,12 @@ export class Intermission {
     } while (Math.floor(t / div));
   }
 
+  /** 맵 이름 그림 (둠1 WILV13 = E2M4, 둠2 CWILV03 = MAP04) */
+  levelName(i) { return this.hud.patch(this.commercial ? `CWILV${String(i).padStart(2, '0')}` : `WILV${this.epsd}${i}`); }
+
   /** "E1M3" + "FINISHED!" */
   drawFinished(frame) {
-    const h = this.hud, name = h.patch(`WILV${this.epsd}${this.last}`), fin = h.patch('WIF');
+    const h = this.hud, name = this.levelName(this.last), fin = h.patch('WIF');
     if (!name) return;
     h.blit(frame, name, (W - name.width) >> 1, TITLE_Y);
     h.blit(frame, fin, (W - fin.width) >> 1, TITLE_Y + Math.floor((5 * name.height) / 4));
@@ -215,12 +229,14 @@ export class Intermission {
 
   drawNext(frame) {
     const h = this.hud;
-    const last = this.last === 8 ? this.next - 1 : this.last;           // 비밀 맵에서 돌아올 때는 다음 맵 직전까지
-    for (let i = 0; i <= last; i++) this.drawOnNode(frame, i, [h.patch('WISPLAT')]);
-    if (this.last === 8) this.drawOnNode(frame, 8, [h.patch('WISPLAT')]);                // 비밀 맵을 거쳐 왔다
-    if (this.pointerOn) this.drawOnNode(frame, this.next, [h.patch('WIURH0'), h.patch('WIURH1')]);
+    if (this.ep.nodes) {                                                 // 둠2 는 지도가 없다
+      const last = this.last === 8 ? this.next - 1 : this.last;         // 비밀 맵에서 돌아올 때는 다음 맵 직전까지
+      for (let i = 0; i <= last; i++) this.drawOnNode(frame, i, [h.patch('WISPLAT')]);
+      if (this.last === 8) this.drawOnNode(frame, 8, [h.patch('WISPLAT')]);              // 비밀 맵을 거쳐 왔다
+      if (this.pointerOn) this.drawOnNode(frame, this.next, [h.patch('WIURH0'), h.patch('WIURH1')]);
+    }
     // "ENTERING" + 다음 맵 이름
-    const enter = h.patch('WIENTER'), name = h.patch(`WILV${this.epsd}${this.next}`);
+    const enter = h.patch('WIENTER'), name = this.levelName(this.next);
     if (!enter || !name) return;
     h.blit(frame, enter, (W - enter.width) >> 1, TITLE_Y);
     h.blit(frame, name, (W - name.width) >> 1, TITLE_Y + Math.floor((5 * name.height) / 4));
@@ -309,17 +325,128 @@ const ENDINGS = [
   { text: E3_TEXT, flat: 'MFLR8_4', bunny: true },
   { text: E4_TEXT, flat: 'MFLR8_3', pics: ['ENDPIC'] },
 ];
+// ---------- 둠2 이야기 화면 (원작 C1TEXT~C6TEXT) ----------
+const DOOM2_STORIES = {
+  C1: { flat: 'SLIME16', text: [
+    'YOU HAVE ENTERED DEEPLY INTO THE INFESTED',
+    'STARPORT. BUT SOMETHING IS WRONG. THE',
+    'MONSTERS HAVE BROUGHT THEIR OWN REALITY',
+    'WITH THEM, AND THE STARPORT\'S TECHNOLOGY',
+    'IS BEING SUBVERTED BY THEIR PRESENCE.',
+    '',
+    'AHEAD, YOU SEE AN OUTPOST OF HELL, A',
+    'FORTIFIED ZONE. IF YOU CAN GET PAST IT,',
+    'YOU CAN PENETRATE INTO THE HAUNTED HEART',
+    'OF THE STARBASE AND FIND THE CONTROLLING',
+    'SWITCH WHICH HOLDS EARTH\'S POPULATION',
+    'HOSTAGE.',
+  ] },
+  C2: { flat: 'RROCK14', text: [
+    'YOU HAVE WON! YOUR VICTORY HAS ENABLED',
+    'HUMANKIND TO EVACUATE EARTH AND ESCAPE',
+    'THE NIGHTMARE.  NOW YOU ARE THE ONLY',
+    'HUMAN LEFT ON THE FACE OF THE PLANET.',
+    'CANNIBAL MUTATIONS, CARNIVOROUS ALIENS,',
+    'AND EVIL SPIRITS ARE YOUR ONLY NEIGHBORS.',
+    'YOU SIT BACK AND WAIT FOR DEATH, CONTENT',
+    'THAT YOU HAVE SAVED YOUR SPECIES.',
+    '',
+    'BUT THEN, EARTH CONTROL BEAMS DOWN A',
+    'MESSAGE FROM SPACE: "SENSORS HAVE LOCATED',
+    'THE SOURCE OF THE ALIEN INVASION. IF YOU',
+    'GO THERE, YOU MAY BE ABLE TO BLOCK THEIR',
+    'ENTRY.  THE ALIEN BASE IS IN THE HEART OF',
+    'YOUR OWN HOME CITY, NOT FAR FROM THE',
+    'STARPORT." SLOWLY AND PAINFULLY YOU GET',
+    'UP AND RETURN TO THE FRAY.',
+  ] },
+  C3: { flat: 'RROCK07', text: [
+    'YOU ARE AT THE CORRUPT HEART OF THE CITY,',
+    'SURROUNDED BY THE CORPSES OF YOUR ENEMIES.',
+    'YOU SEE NO WAY TO DESTROY THE CREATURES\'',
+    'ENTRYWAY ON THIS SIDE, SO YOU CLENCH YOUR',
+    'TEETH AND PLUNGE THROUGH IT.',
+    '',
+    'THERE MUST BE A WAY TO CLOSE IT ON THE',
+    'OTHER SIDE. WHAT DO YOU CARE IF YOU\'VE',
+    'GOT TO GO THROUGH HELL TO GET TO IT?',
+  ] },
+  C4: { flat: 'RROCK17', cast: true, text: [
+    'THE HORRENDOUS VISAGE OF THE BIGGEST',
+    'DEMON YOU\'VE EVER SEEN CRUMBLES BEFORE',
+    'YOU, AFTER YOU PUMP YOUR ROCKETS INTO',
+    'HIS EXPOSED BRAIN. THE MONSTER SHRIVELS',
+    'UP AND DIES, ITS THRASHING LIMBS',
+    'DEVASTATING UNTOLD MILES OF HELL\'S',
+    'SURFACE.',
+    '',
+    'YOU\'VE DONE IT. THE INVASION IS OVER.',
+    'EARTH IS SAVED. HELL IS A WRECK. YOU',
+    'WONDER WHERE BAD FOLKS WILL GO WHEN THEY',
+    'DIE, NOW. WIPING THE SWEAT FROM YOUR',
+    'FOREHEAD YOU BEGIN THE LONG TREK BACK',
+    'HOME. REBUILDING EARTH OUGHT TO BE A',
+    'LOT MORE FUN THAN RUINING IT WAS.',
+  ] },
+  C5: { flat: 'RROCK13', text: [
+    'CONGRATULATIONS, YOU\'VE FOUND THE SECRET',
+    'LEVEL! LOOKS LIKE IT\'S BEEN BUILT BY',
+    'HUMANS, RATHER THAN DEMONS. YOU WONDER',
+    'WHO THE INMATES OF THIS CORNER OF HELL',
+    'WILL BE.',
+  ] },
+  C6: { flat: 'RROCK19', text: [
+    'CONGRATULATIONS, YOU\'VE FOUND THE',
+    'SUPER SECRET LEVEL!  YOU\'D BETTER',
+    'BLAZE THROUGH THIS ONE!',
+  ] },
+};
+
+// ---------- 둠2 출연진 소개 (원작 F_StartCast): 몬스터가 하나씩 걷고 공격하고, 키를 누르면 쓰러진다 ----------
+const CAST = [
+  ['POSS', 'ZOMBIEMAN'], ['SPOS', 'SHOTGUN GUY'], ['CPOS', 'HEAVY WEAPON DUDE'], ['TROO', 'IMP'], ['SARG', 'DEMON'],
+  ['SKUL', 'LOST SOUL'], ['HEAD', 'CACODEMON'], ['BOS2', 'HELL KNIGHT'], ['BOSS', 'BARON OF HELL'], ['BSPI', 'ARACHNOTRON'],
+  ['PAIN', 'PAIN ELEMENTAL'], ['SKEL', 'REVENANT'], ['FATT', 'MANCUBUS'], ['VILE', 'ARCH-VILE'], ['SPID', 'THE SPIDER MASTERMIND'],
+  ['CYBR', 'THE CYBERDEMON'], ['PLAY', 'OUR HERO'],
+];
+const S = (f, t) => ({ f, t });
+const PLAYER_CAST = {   // 플레이어는 상태 표가 states.js 에 없어 여기 둔다
+  states: {
+    run: [S('A', 4), S('B', 4), S('C', 4), S('D', 4)],
+    attack: [S('E', 12), S('F', 6, true)],
+    die: [S('H', 10), S('I', 10), S('J', 10), S('K', 10), S('L', 10), S('M', 10), S('N', -1)],
+  },
+  sounds: { see: null, die: 'PLDETH' },
+};
+
 // 토끼 스크롤 (원작 F_BunnyScroll): 230 tic 뒤부터 PFUB2 → PFUB1 로 2 tic 에 1픽셀, 1130 tic 에 "THE END" 가 한 글자씩
 const BUNNY_SCROLL_AT = 230, BUNNY_END_AT = 1130, BUNNY_LETTERS_AT = 1180;
 const textLength = (lines) => lines.join('\n').length;
 
 export class Finale {
-  /** @param play (효과음 이름) => void */
-  constructor(hud, play = () => {}) { this.hud = hud; this.play = play; this.done = false; }
+  /**
+   * @param play (효과음 이름) => void
+   * @param castInfo (스프라이트 이름) => { states, sounds } — 출연진 소개에 쓰는 몬스터 상태 표 (states.js 의 AI)
+   */
+  constructor(hud, play = () => {}, castInfo = () => null) { this.hud = hud; this.play = play; this.castInfo = castInfo; this.done = false; }
 
-  /** epsd: 0 = 에피소드 1 … 3 = 에피소드 4 */
+  /** 둠1 에피소드 엔딩. epsd: 0 = 에피소드 1 … 3 = 에피소드 4 */
   start(epsd = 0) {
     this.end = ENDINGS[epsd] ?? ENDINGS[0];
+    this.story = null;
+    this.song = 'D_VICTOR';
+    this.begin();
+  }
+
+  /** 둠2 이야기 화면 (C1~C6). C4(MAP30 끝) 다음에는 출연진 소개 */
+  startStory(key) {
+    this.end = DOOM2_STORIES[key];
+    this.story = key;
+    this.song = 'D_READ_M';
+    this.begin();
+  }
+
+  begin() {
     this.typed = textLength(this.end.text) * TEXT_SPEED + 10;
     this.count = 0; this.stage = 0; this.done = false; this.endLetters = -1;
   }
@@ -327,18 +454,78 @@ export class Finale {
   /** 글자가 찍히는 중이면 한 번에 다 보여주고, 다 보였으면 다음 화면으로, 마지막 화면이면 끝 */
   press() {
     if (this.stage === 0) { if (this.count < this.typed) this.count = this.typed; else this.toArt(); }
+    else if (this.stage === 2) this.castPress();
     else this.done = true;
   }
 
-  toArt() { this.stage = 1; this.count = 0; }
+  /** 글이 끝난 다음: 그림(둠1) · 출연진 소개(MAP30) · 바로 끝(그 밖의 둠2 이야기) */
+  toArt() {
+    if (this.end.cast) { this.startCast(); return; }
+    if (this.story) { this.done = true; return; }
+    this.stage = 1; this.count = 0;
+  }
 
   tick() {
     this.count++;
     if (this.stage === 0 && this.count > this.typed - 10 + TEXT_WAIT) this.toArt();
+    else if (this.stage === 2) this.castTick();
+  }
+
+  // ---------- 출연진 소개 ----------
+  startCast() {
+    this.stage = 2; this.song = 'D_EVIL';
+    this.castNum = 0; this.castSetup();
+  }
+
+  castSetup() {
+    const [sprite, name] = CAST[this.castNum];
+    this.cast = { sprite, name, info: sprite === 'PLAY' ? PLAYER_CAST : this.castInfo(sprite) };
+    this.castDeath = false; this.castFrames = 0; this.castAttacking = false;
+    this.castSet('run', 0);
+    const see = this.cast.info?.sounds?.see;
+    if (see) this.play(Array.isArray(see) ? see[0] : see);
+  }
+
+  castSet(label, idx) {
+    const list = this.cast.info?.states?.[label] ?? [S('A', -1)];
+    const s = list[idx] ?? list[0];
+    this.castLabel = label; this.castIdx = idx; this.castFrame = s.f; this.castTics = s.t;
+  }
+
+  castTick() {
+    if (this.castTics === -1) {                             // 다 쓰러졌다: 잠깐 뒤 다음 출연자
+      if (this.castDeath && ++this.castFrames > 15) { this.castNum = (this.castNum + 1) % CAST.length; this.castSetup(); }
+      return;
+    }
+    if (--this.castTics > 0) return;
+    const list = this.cast.info?.states?.[this.castLabel] ?? [];
+    if (this.castIdx + 1 < list.length) { this.castSet(this.castLabel, this.castIdx + 1); return; }
+    if (this.castDeath) { this.castTics = -1; return; }
+    // 걷기를 12 번 하면 공격을 한 번 보여 주고 다시 걷는다 (원작과 같은 리듬)
+    if (this.castLabel === 'run' && ++this.castFrames >= 12 && this.cast.info?.states?.attack) { this.castFrames = 0; this.castSet('attack', 0); return; }
+    this.castSet('run', 0);
+  }
+
+  castPress() {
+    if (this.castDeath) return;
+    this.castDeath = true; this.castFrames = 0;
+    this.castSet('die', 0);
+    const die = this.cast.info?.sounds?.die;
+    if (die) this.play(Array.isArray(die) ? die[0] : die);
+  }
+
+  drawCast(frame) {
+    const h = this.hud;
+    h.blit(frame, h.patch('BOSSBACK'), 0, 0);
+    const { sprite, name } = this.cast, f = this.castFrame;
+    const pic = h.patch(`${sprite}${f}1`) ?? h.patch(`${sprite}${f}0`) ?? h.patch(`${sprite}${f}1${f}9`);
+    h.blit(frame, pic, W / 2, 170);
+    h.text(frame, name, (W - h.textWidth(name)) >> 1, 180);
   }
 
   draw(frame) {
     const h = this.hud;
+    if (this.stage === 2) { this.drawCast(frame); return; }
     if (this.stage === 1) {
       if (this.end.bunny) this.drawBunny(frame);
       else h.blit(frame, this.end.pics.map((n) => h.patch(n)).find(Boolean), 0, 0);

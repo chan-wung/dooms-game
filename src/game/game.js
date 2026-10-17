@@ -12,7 +12,7 @@ import { sectorAt } from '../render/bsp.js';
 
 /** 아이템 줍는 소리: 무기 = WPNUP, 파워업·소울스피어 = GETPOW, 그 외 ITEMUP */
 const PICKUP_SOUND = {
-  shotgun: 'WPNUP', chaingun: 'WPNUP', rocketLauncher: 'WPNUP', plasmaGun: 'WPNUP', bfg: 'WPNUP', chainsaw: 'WPNUP',
+  shotgun: 'WPNUP', superShotgun: 'WPNUP', megasphere: 'GETPOW', chaingun: 'WPNUP', rocketLauncher: 'WPNUP', plasmaGun: 'WPNUP', bfg: 'WPNUP', chainsaw: 'WPNUP',
   soulsphere: 'GETPOW', invulnerability: 'GETPOW', berserk: 'GETPOW', invisibility: 'GETPOW', radsuit: 'GETPOW', automap: 'GETPOW', lightamp: 'GETPOW',
 };
 

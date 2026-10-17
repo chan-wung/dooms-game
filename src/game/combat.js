@@ -197,8 +197,8 @@ export function killMobj(game, source, target) {
   target.tics -= game.rnd() & 3;
   if (target.tics < 1) target.tics = 1;
 
-  // 떨어뜨리는 물건 (좀비맨 = 탄창, 샷건맨 = 샷건)
-  const drop = { clip: 2007, shotgun: 2001 }[target.ai.drop];
+  // 떨어뜨리는 물건 (좀비맨·SS = 탄창, 샷건맨 = 샷건, 체인거너 = 체인건)
+  const drop = { clip: 2007, shotgun: 2001, chaingun: 2002 }[target.ai.drop];
   if (drop) {
     const item = new Mobj(drop, THING_INFO[drop], target.x, target.y, 0, target.sector);
     item.dropped = true;

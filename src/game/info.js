@@ -30,6 +30,18 @@ export const THING_INFO = {
   3006: mon('SKUL', 'AB', 10, { name: 'lost soul', ai: 'SKUL', radius: 16, bright: true, noCount: true }),
   16: mon('CYBR', 'AB', 10, { name: 'cyberdemon', ai: 'CYBR', radius: 40, height: 110 }),
   7: mon('SPID', 'AB', 10, { name: 'spider mastermind', ai: 'SPID', radius: 128, height: 100 }),
+  // 둠2
+  65: mon('CPOS', 'AB', 10, { name: 'heavy weapon dude', ai: 'CPOS' }),
+  84: mon('SSWV', 'AB', 10, { name: 'wolfenstein ss', ai: 'SSWV' }),
+  69: mon('BOS2', 'AB', 10, { name: 'hell knight', ai: 'BOS2', radius: 24, height: 64 }),
+  66: mon('SKEL', 'AB', 10, { name: 'revenant', ai: 'SKEL', height: 56 }),
+  67: mon('FATT', 'AB', 15, { name: 'mancubus', ai: 'FATT', radius: 48, height: 64 }),
+  68: mon('BSPI', 'AB', 10, { name: 'arachnotron', ai: 'BSPI', radius: 64, height: 64 }),
+  71: mon('PAIN', 'A', 10, { name: 'pain elemental', ai: 'PAIN', radius: 31 }),
+  64: mon('VILE', 'AB', 10, { name: 'arch-vile', ai: 'VILE' }),
+  72: mon('KEEN', 'A', 10, { name: 'commander keen', ai: 'KEEN', radius: 16, height: 72, ceiling: true }),
+  88: mon('BBRN', 'A', 10, { name: 'icon of sin', ai: 'BBRN', radius: 16, height: 16, noCount: true }),
+  89: mk('SSWV', 'A', 10, { name: 'monster spawner', ai: 'BOSSEYE', hidden: true, radius: 20, height: 32 }),   // 보이지 않는다 (그림은 아무것)
 
   // ----- 통 -----
   2035: mk('BAR1', 'AB', 6, { solid: true, radius: 10, height: 42, name: 'barrel', ai: 'BAR1', shootable: true }),
@@ -43,6 +55,7 @@ export const THING_INFO = {
   2018: mk('ARM1', 'AB', [6, 7], { pickup: 'greenArmor', countItem: true, bright: 'B' }),
   2019: mk('ARM2', 'AB', [6, 7], { pickup: 'blueArmor', countItem: true, bright: 'B' }),
   2013: mk('SOUL', 'ABCDCB', 6, { pickup: 'soulsphere', countItem: true, bright: true }),
+  83: mk('MEGA', 'ABCD', 6, { pickup: 'megasphere', countItem: true, bright: true }),   // 둠2
 
   // ----- 파워업 -----
   2022: mk('PINV', 'ABCD', 6, { pickup: 'invulnerability', countItem: true, bright: true }),
@@ -70,6 +83,7 @@ export const THING_INFO = {
   2004: item('PLAS', 'plasmaGun'),
   2006: item('BFUG', 'bfg'),
   2005: item('CSAW', 'chainsaw'),
+  82: item('SGN2', 'superShotgun'),   // 둠2
 
   // ----- 열쇠 -----
   5: key('BKEY', 'blueCard'), 6: key('YKEY', 'yellowCard'), 13: key('RKEY', 'redCard'),
@@ -107,6 +121,15 @@ export const THING_INFO = {
   51: deco('GOR3', 'A', 6, { solid: true, ceiling: true, height: 68 }),
   52: deco('GOR4', 'A', 6, { solid: true, ceiling: true, height: 68 }),
   53: deco('GOR5', 'A', 6, { solid: true, ceiling: true, height: 68 }),
+  // 둠2: 매달린 시체, 기술 기지 조명
+  73: deco('HDB1', 'A', 6, { solid: true, ceiling: true, height: 88 }),
+  74: deco('HDB2', 'A', 6, { solid: true, ceiling: true, height: 88 }),
+  75: deco('HDB3', 'A', 6, { solid: true, ceiling: true, height: 64 }),
+  76: deco('HDB4', 'A', 6, { solid: true, ceiling: true, height: 64 }),
+  77: deco('HDB5', 'A', 6, { solid: true, ceiling: true, height: 64 }),
+  78: deco('HDB6', 'A', 6, { solid: true, ceiling: true, height: 64 }),
+  85: deco('TLMP', 'ABCD', 4, { solid: true, bright: true }),
+  86: deco('TLP2', 'ABCD', 4, { solid: true, bright: true }),
 
   // ----- 장식 (지나갈 수 있는 것) -----
   10: deco('PLAY', 'W', 6), 12: deco('PLAY', 'W', 6), 15: deco('PLAY', 'N', 6),
@@ -114,6 +137,7 @@ export const THING_INFO = {
   21: deco('SARG', 'N', 6), 22: deco('HEAD', 'L', 6), 23: deco('SKUL', 'K', 6),
   24: deco('POL5', 'A', 6),
   34: deco('CAND', 'A', 6, { bright: true }),
+  79: deco('POB1', 'A', 6), 80: deco('POB2', 'A', 6), 81: deco('BRS1', 'A', 6),   // 둠2: 핏자국, 뇌 조각
   59: deco('GOR2', 'A', 6, { ceiling: true, height: 68 }),
   60: deco('GOR4', 'A', 6, { ceiling: true, height: 68 }),
   61: deco('GOR3', 'A', 6, { ceiling: true, height: 68 }),

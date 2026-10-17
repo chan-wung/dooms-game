@@ -7,7 +7,7 @@ export const POWER_TICS = { invuln: 30 * 35, invis: 60 * 35, radsuit: 60 * 35, l
 
 const CLIP_AMMO = { clip: 10, shell: 4, cell: 20, rocket: 1 };      // 탄약 1 묶음의 양
 const BASE_MAX = { clip: 200, shell: 50, cell: 300, rocket: 50 };
-const WEAPON_AMMO = { shotgun: 'shell', chaingun: 'clip', rocketLauncher: 'rocket', plasmaGun: 'cell', bfg: 'cell', chainsaw: null };
+const WEAPON_AMMO = { shotgun: 'shell', chaingun: 'clip', rocketLauncher: 'rocket', plasmaGun: 'cell', bfg: 'cell', chainsaw: null, superShotgun: 'shell' };
 
 export const newAmmo = () => ({ clip: 50, shell: 0, cell: 0, rocket: 0 });
 export const newMaxAmmo = () => ({ ...BASE_MAX });
@@ -64,6 +64,7 @@ export function touchSpecial(game, p, m) {
     case 'greenArmor': if (!giveArmor(p, 1)) return false; say('Picked up the armor.'); return true;
     case 'blueArmor': if (!giveArmor(p, 2)) return false; say('Picked up the MegaArmor!'); return true;
     case 'soulsphere': p.health = Math.min(MAX_HEALTH, p.health + 100); say('Supercharge!'); return true;
+    case 'megasphere': p.health = MAX_HEALTH; p.armor = 200; p.armorType = 2; say('MegaSphere!'); return true;   // 둠2
 
     // 파워업
     case 'invulnerability': p.powers.invuln = POWER_TICS.invuln; say('Invulnerability!'); return true;
@@ -92,6 +93,7 @@ export function touchSpecial(game, p, m) {
 
     // 무기
     case 'shotgun': if (!giveWeapon(p, 'shotgun', m.dropped)) return false; say('You got the shotgun!'); return true;
+    case 'superShotgun': if (!giveWeapon(p, 'superShotgun', m.dropped)) return false; say('You got the super shotgun!'); return true;
     case 'chaingun': if (!giveWeapon(p, 'chaingun', m.dropped)) return false; say('You got the chaingun!'); return true;
     case 'rocketLauncher': if (!giveWeapon(p, 'rocketLauncher', m.dropped)) return false; say('You got the rocket launcher!'); return true;
     case 'plasmaGun': if (!giveWeapon(p, 'plasmaGun', m.dropped)) return false; say('You got the plasma gun!'); return true;

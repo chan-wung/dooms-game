@@ -17,7 +17,8 @@ import { MusicPlayer, parseMus } from './audio/music.js';
 import { Game, TICRATE } from './game/game.js';
 import { MOUSE_SENS } from './game/player.js';
 import { Input } from './app/input.js';
-import { nextMapName } from './app/progress.js';
+import { nextMapName, storyAfter, mapSong } from './app/progress.js';
+import { AI } from './game/states.js';
 import { loadSettings, saveSettings as storeSettings, readSlot, writeSlot, listSlots, slotName, lastSlot, setLastSlot } from './app/storage.js';
 import { saveGame, loadGame } from './game/savegame.js';
 import { CheatTyper, cheatChar, toggleGod, toggleNoclip, giveKfa, giveFa, togglePower, giveChainsaw, showPosition } from './game/cheats.js';
@@ -76,10 +77,11 @@ let currentSong = null;
 
 /** 지금 상황에 맞는 곡: 타이틀 / 결과 화면 / 에피소드 클리어 / 맵 */
 const songFor = () => {
-  if (appState === 'intermission') return 'D_INTER';
-  if (appState === 'finale') return 'D_VICTOR';
-  if (appState === 'title' || !game) return 'D_INTRO';
-  return `D_${mapName}`;
+  const first = (...names) => names.find((n) => wad.has(n)) ?? names[0];   // 둠1 / 둠2 곡 이름이 다르다
+  if (appState === 'intermission') return first('D_INTER', 'D_DM2INT');
+  if (appState === 'finale') return finale.song ?? 'D_VICTOR';
+  if (appState === 'title' || !game) return first('D_INTRO', 'D_DM2TTL');
+  return mapSong(mapName);
 };
 
 const updateMusic = () => {
@@ -147,6 +149,7 @@ const openMap = (name, carry = null, saved = null) => {
     const lvl = loadLevel(wad, name);
     const g = saved ? loadGame(lvl, saved.skill, saved.game) : new Game(lvl, settings.skill, 1, carry);
     g.registered = wad.has('PLSGA0');   // 플라즈마·BFG 그림이 있는 WAD (정식판) 에서만 치트로 준다
+    g.commercial = wad.has('SHT2A0');   // 슈퍼 샷건 그림이 있는 WAD (둠2)
     startWipe();
     level = lvl; game = g;
     levelStart = saved ? saved.levelStart : carry;
@@ -221,6 +224,7 @@ const runCheat = (name, arg) => {
       game.say(['Automap: normal', 'Automap: all lines', 'Automap: all lines and things'][automapMode], true);
       break;
     case 'warp':
+      if (!wad.has(arg)) arg = arg.replace(/^E(\d)M(\d)$/, 'MAP$1$2');   // 둠2: IDCLEV07 → MAP07
       if (wad.has(arg)) { menu.close(); openMap(arg, game.player.exportState()); game.say('Changing Level...', true); lockPointer(); }
       break;
     default: return false;
@@ -337,7 +341,7 @@ const startWad = (buf, source, persist = false) => {
     music.setEnabled(!!settings.musicOn);
     menu = new Menu(hud, startMenuActions(), settings);
     inter = new Intermission(hud, (name) => sound.play(name));
-    finale = new Finale(hud, (name) => sound.play(name));
+    finale = new Finale(hud, (name) => sound.play(name), (sprite) => AI[sprite]);
     applyVideo();
     window.gfx = gfx; window.sound = sound; window.music = music; window.menu = menu; window.settings = settings;
   } catch (err) {
@@ -578,7 +582,8 @@ const beginIntermission = () => {
   document.exitPointerLock?.();
   $overlay.hidden = true; $msg.textContent = '';
   acc = 0;
-  if (!next) { finale.start(Number(/^E(\d)/.exec(mapName)?.[1] ?? 1) - 1); appState = 'finale'; }                 // 원작: 에피소드 마지막 맵은 점수 화면 없이 바로 엔딩
+  // 원작: 둠1 에피소드 마지막 맵은 점수 화면 없이 바로 엔딩 (둠2 는 MAP30 도 점수 화면 다음에 이야기 화면)
+  if (!next && !/^MAP/.test(mapName)) { finale.start(Number(/^E(\d)/.exec(mapName)?.[1] ?? 1) - 1); appState = 'finale'; }
   else {
     inter.start({
       map: mapName, next, secretExit: ex.secret, time: ex.time,
@@ -594,6 +599,17 @@ const nextMap = () => {
   const next = nextMapName(mapName, game.exited.secret);
   if (next && wad.has(next)) { openMap(next, game.player.exportState()); lockPointer(); }
   else quitToTitle();
+};
+
+/** 점수 화면·엔딩이 끝났다: 둠2 는 이야기 화면(C1~C6)을 거쳐 다음 맵으로, 엔딩이 끝나면 타이틀로 */
+const afterScreen = () => {
+  if (appState === 'intermission') {
+    const story = storyAfter(mapName, game.exited.secret);
+    if (story) { startWipe(); finale.startStory(story); appState = 'finale'; updateMusic(); return; }
+    nextMap();
+    return;
+  }
+  if (finale.story && nextMapName(mapName, game?.exited?.secret)) nextMap(); else quitToTitle();
 };
 
 /** 점수/엔딩 화면에서 키·탭: 진행 */
@@ -680,10 +696,11 @@ const frame = (now) => {
       const screenObj = appState === 'intermission' ? inter : finale;
       if (wiping) acc = 0; else acc += dt;
       while (acc >= TIC) { screenObj.tick(); acc -= TIC; }
+      if (appState === 'finale' && finale.song && finale.song !== currentSong) updateMusic();   // 둠2: 이야기 → 출연진 소개로 곡이 바뀐다
       setTint(0);
       screenObj.draw(screenBuf);
       present(dt);
-      if (screenObj.done) { if (appState === 'finale') quitToTitle(); else nextMap(); }
+      if (screenObj.done) afterScreen();
     } else {
       // 타이틀 화면
       setTint(0);

@@ -29,6 +29,13 @@ export const WEAPONS = {
     attack: [S('A', 3), S('A', 7, 'fireShotgun'), S('B', 5), S('C', 5), S('D', 4, 'sgCock'), S('C', 5), S('B', 5), S('A', 3), S('A', 7, 'refire')],
     flashSprite: 'SHTF', flash: [S('A', 4, 'light1', true), S('B', 3, 'light2', true)],
   },
+  superShotgun: {   // 둠2: 한 발에 산탄 20개, 탄약 2
+    sprite: 'SHT2', ammo: 'shell', ammoPerShot: 2,
+    ready: [S('A', 1, 'ready')], up: [S('A', 1, 'raise')], down: [S('A', 1, 'lower')],
+    attack: [S('A', 3), S('A', 7, 'fireShotgun2'), S('B', 7), S('C', 7, 'checkReload'), S('D', 7, 'openShotgun2'), S('E', 7),
+      S('F', 7, 'loadShotgun2'), S('G', 6), S('H', 6, 'closeShotgun2'), S('A', 5, 'refire')],
+    flashSprite: 'SHT2', flash: [S('I', 4, 'light1', true), S('J', 3, 'light2', true)],
+  },
   chaingun: {
     sprite: 'CHGG', ammo: 'clip',
     ready: [S('A', 1, 'ready')], up: [S('A', 1, 'raise')], down: [S('A', 1, 'lower')],
@@ -63,7 +70,7 @@ export const WEAPONS = {
 
 /** 숫자 키 → 무기 */
 const KEY_WEAPONS = { 2: 'pistol', 3: 'shotgun', 4: 'chaingun', 5: 'rocketLauncher', 6: 'plasmaGun', 7: 'bfg' };
-const CYCLE = ['fist', 'chainsaw', 'pistol', 'shotgun', 'chaingun', 'rocketLauncher', 'plasmaGun', 'bfg'];
+const CYCLE = ['fist', 'chainsaw', 'pistol', 'shotgun', 'superShotgun', 'chaingun', 'rocketLauncher', 'plasmaGun', 'bfg'];
 /** 한 번 쏠 때 드는 탄약 (BFG 만 40) */
 const ammoPerShot = (w) => WEAPONS[w].ammoPerShot ?? 1;
 
@@ -127,6 +134,8 @@ export function bringUpWeapon(game, p) {
 /** 숫자 키(1~7)로 무기 교체 요청 */
 export function requestWeapon(p, n) {
   let w = n === 1 ? ((p.weapons.has('chainsaw') && p.readyWeapon !== 'chainsaw') ? 'chainsaw' : 'fist') : KEY_WEAPONS[n];
+  // 3번: 슈퍼 샷건이 있으면 그것부터, 이미 들고 있으면 일반 샷건 (원작)
+  if (n === 3 && p.weapons.has('superShotgun') && (p.readyWeapon !== 'superShotgun' || !p.weapons.has('shotgun'))) w = 'superShotgun';
   if (!w || !p.weapons.has(w) || w === p.readyWeapon) return;
   p.pendingWeapon = w;
 }
@@ -149,6 +158,7 @@ function checkAmmo(game, p) {
   if (enoughAmmo(p)) return true;
   const has = (w, ammo) => p.weapons.has(w) && p.ammo[ammo] >= 1;
   if (has('plasmaGun', 'cell')) p.pendingWeapon = 'plasmaGun';
+  else if (p.weapons.has('superShotgun') && p.ammo.shell > 2) p.pendingWeapon = 'superShotgun';
   else if (has('chaingun', 'clip')) p.pendingWeapon = 'chaingun';
   else if (has('shotgun', 'shell')) p.pendingWeapon = 'shotgun';
   else if (p.ammo.clip >= 1 && p.weapons.has('pistol')) p.pendingWeapon = 'pistol';
@@ -247,6 +257,22 @@ const ACTIONS = {
   gunFlash(game, p) { setFlash(game, p); },
 
   sgCock(game) { game.playSound('SGCOCK'); },
+
+  /** 슈퍼 샷건: 산탄 20개, 좌우 ±11°·위아래로도 흩어진다 */
+  fireShotgun2(game, p) {
+    game.playSound('DSHTGN');
+    useAmmo(p); setFlash(game, p);
+    bulletSlope(game, p);
+    for (let i = 0; i < 20; i++) {
+      const damage = 5 * ((game.rnd() % 3) + 1);
+      const angle = p.angle + spread(game, 19);
+      lineAttack(game, p, angle, MISSILE_RANGE, p.bulletSlope + (game.rnd() - game.rnd()) / 2048, damage);
+    }
+  },
+  checkReload(game, p) { checkAmmo(game, p); },
+  openShotgun2(game) { game.playSound('DBOPN'); },
+  loadShotgun2(game) { game.playSound('DBLOAD'); },
+  closeShotgun2(game, p) { game.playSound('DBCLS'); ACTIONS.refire(game, p); },
 
   fireMissile(game, p) {
     useAmmo(p);

@@ -6,11 +6,13 @@ import { POWER_TICS } from './items.js';
  */
 const WEAPON_LIST = ['fist', 'pistol', 'shotgun', 'chaingun', 'chainsaw', 'rocketLauncher'];
 const REGISTERED_WEAPONS = ['plasmaGun', 'bfg'];   // 셰어웨어 WAD 에는 그림이 없어 정식판에서만 준다 (game.registered)
+const COMMERCIAL_WEAPONS = ['superShotgun'];       // 둠2 에만 있다 (game.commercial)
 
 const fullAmmo = (p) => { for (const k of Object.keys(p.ammo)) p.ammo[k] = p.maxAmmo[k]; };
 const fullWeapons = (game, p) => {
   for (const w of WEAPON_LIST) p.weapons.add(w);
   if (game.registered) for (const w of REGISTERED_WEAPONS) p.weapons.add(w);
+  if (game.commercial) for (const w of COMMERCIAL_WEAPONS) p.weapons.add(w);
 };
 const blueArmor = (p) => { p.armor = 200; p.armorType = 2; };
 
