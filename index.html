@@ -84,7 +84,7 @@
 <body>
   <h1>doom-js</h1>
   <div id="drop">
-    <p>public/wad/DOOM1.WAD 를 찾지 못하면 여기에 WAD 파일을 드롭하거나 선택하세요</p>
+    <p>public/wad/DOOM1.WAD 를 찾지 못하면 여기에 WAD 파일(DOOM1 · DOOM · DOOM2.WAD)을 드롭하거나 선택하세요</p>
     <input type="file" id="file" accept=".wad,.WAD">
   </div>
   <div id="status">로딩 중…</div>
@@ -92,6 +92,7 @@
     <label>맵 <select id="mapSel"></select></label>
     <button id="btnMode">오토맵 (Tab)</button>
     <button id="btnFull">전체화면</button>
+    <button id="btnWad">WAD 바꾸기</button>
     <label><input type="checkbox" id="optSfx" checked> 효과음</label>
     <label><input type="checkbox" id="optMusic" checked> 음악</label>
     <span id="mapOpts" hidden>

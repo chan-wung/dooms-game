@@ -1,6 +1,6 @@
 import { Wad } from './wad/wad.js';
 import { loadLevel } from './wad/level.js';
-import { saveWad, loadSavedWad } from './wad/store.js';
+import { saveWad, loadSavedWad, clearSavedWad } from './wad/store.js';
 import { Automap } from './ui/automap.js';
 import { Renderer, SCREEN_W, SCREEN_H } from './render/renderer.js';
 import { Screen } from './render/screen.js';
@@ -308,8 +308,9 @@ const startMenuActions = () => ({
   slotNames: () => listSlots().map((s, n) => (s ? (n === 0 ? `AUTO  ${s.map}` : s.name) : null)),
   loadSlot,
   saveSlot,
-  newGame: (skill) => { settings.skill = skill; saveSettings(); menu.close(); openMap('E1M1'); lockPointer(); },
+  newGame: (skill) => { settings.skill = skill; saveSettings(); menu.close(); openMap(wad.getMapNames()[0]); lockPointer(); },
   quitToTitle,
+  changeWad,
   settingsChanged: applySettings,
   play: (name) => sound.play(name),
 });
@@ -363,6 +364,11 @@ const fetchDefault = async () => {
     else $status.textContent = '게임 데이터(DOOM1.WAD)가 필요합니다. 아래에 파일을 끌어다 놓거나 선택하세요. (파일은 이 브라우저에만 저장됩니다)';
   }
 };
+/** 저장해 둔 WAD 를 지우고 새로 시작한다 (파일 고르는 화면으로 돌아간다). 엔진 상태를 통째로 바꾸므로 새로고침이 가장 안전하다 */
+async function changeWad() {
+  await clearSavedWad();
+  window.location.reload();
+}
 const loadFile = async (f) => { if (f) startWad(await f.arrayBuffer(), f.name, true); };
 $file.addEventListener('change', () => loadFile($file.files[0]));
 $drop.addEventListener('dragover', (e) => { e.preventDefault(); $drop.classList.add('over'); });
@@ -506,6 +512,12 @@ $canvas.addEventListener('wheel', (e) => {
   const r = $canvas.getBoundingClientRect(), dpr = $canvas.width / r.width;
   automap.zoomAt((e.clientX - r.left) * dpr, (e.clientY - r.top) * dpr, e.deltaY < 0 ? 1.15 : 1 / 1.15);
 }, { passive: false });
+
+$('btnWad').addEventListener('click', () => {
+  $('btnWad').blur();
+  if (appState === 'play' && game) withMenu(() => menu.ask(['CHANGE THE WAD FILE?', 'UNSAVED PROGRESS WILL BE LOST.'], changeWad, 'close'));
+  else changeWad();
+});
 
 $('btnFull').addEventListener('click', () => {
   if (document.fullscreenElement) document.exitFullscreen();

@@ -118,7 +118,7 @@ export class Menu {
         L.skullX = 28;
         L.title = (f) => {
           hud.blit(f, hud.patch('M_OPTTTL'), 108, 15);
-          this.dim(f, 56, 150, 256, 197);                  // 타이틀 그림 위에서도 글자가 읽히게
+          this.dim(f, 56, 148, 256, 200);                 // 타이틀 그림 위에서도 글자가 읽히게
         };
         const maps = a.maps();
         I.push({ id: 'end', patch: 'M_ENDGAM', x: 60, y: 37, h: 16, act: () => {
@@ -132,11 +132,15 @@ export class Menu {
         I.push({ id: 'sens', patch: 'M_MSENS', x: 60, y: 101, h: 32, therm: { get: () => s.sens, set: (v) => set('sens', v, 0, 9), max: 9 } });
         I.push({ id: 'sound', patch: 'M_SVOL', x: 60, y: 133, h: 16, act: () => { a.play('PISTOL'); this.show('sound'); } });
         const gamma = (d) => set('gamma', (s.gamma + d + 5) % 5, 0, 4);
-        I.push({ id: 'bright', text: `BRIGHTNESS  < ${s.gamma} >`, x: 64, y: 152, h: 11, adjust: gamma, act: () => gamma(1) });
-        I.push({ id: 'cheats', text: 'CHEATS', x: 64, y: 163, h: 11, act: () => { a.play('PISTOL'); this.show('cheats'); } });
+        I.push({ id: 'bright', text: `BRIGHTNESS  < ${s.gamma} >`, x: 64, y: 150, h: 10, adjust: gamma, act: () => gamma(1) });
+        I.push({ id: 'cheats', text: 'CHEATS', x: 64, y: 160, h: 10, act: () => { a.play('PISTOL'); this.show('cheats'); } });
         const cycleMap = (d) => { const n = maps.length; if (n) { this.mapIdx = (this.mapIdx + d + n) % n; a.play('STNMOV'); } };
-        I.push({ id: 'map', text: `MAP  < ${maps[this.mapIdx] ?? '-'} >`, x: 64, y: 174, h: 11, adjust: cycleMap, act: () => cycleMap(1) });
-        I.push({ id: 'warp', text: 'START MAP', x: 64, y: 185, h: 11, act: () => this.warpToMap() });
+        I.push({ id: 'map', text: `MAP  < ${maps[this.mapIdx] ?? '-'} >`, x: 64, y: 170, h: 10, adjust: cycleMap, act: () => cycleMap(1) });
+        I.push({ id: 'warp', text: 'START MAP', x: 64, y: 180, h: 10, act: () => this.warpToMap() });
+        I.push({ id: 'wad', text: 'CHANGE WAD FILE', x: 64, y: 190, h: 10, act: () => {
+          a.play('PISTOL');
+          this.ask(['CHANGE THE WAD FILE?', 'UNSAVED PROGRESS WILL BE LOST.'], () => a.changeWad(), ['options', 'wad']);
+        } });
         I.forEach((it) => Object.assign(it, { rx0: 56, rx1: 270 }));
         break;
       }
