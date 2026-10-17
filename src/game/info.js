@@ -14,6 +14,9 @@ const item = (sprite, pickup, o = {}) => mk(sprite, 'A', 6, { pickup, ...o });
 const key = (sprite, pickup) => mk(sprite, 'AB', 10, { pickup, bright: 'B' });
 const mon = (sprite, seq, tics, o = {}) => mk(sprite, seq, tics, { solid: true, shootable: true, monster: true, height: 56, ...o });
 
+/** 킬 수(KILLS %)에 들어가는 몬스터인가 (로스트 소울은 빠진다) */
+export const countsKill = (info) => info.monster && !info.noCount;
+
 export const THING_INFO = {
   // ----- 몬스터 (Phase 6 에서 AI 를 붙인다: 지금은 서 있는 모습) -----
   3004: mon('POSS', 'AB', 10, { name: 'zombieman', ai: 'POSS' }),
@@ -22,6 +25,11 @@ export const THING_INFO = {
   3002: mon('SARG', 'AB', 10, { name: 'demon', ai: 'SARG', radius: 30 }),
   58: mon('SARG', 'AB', 10, { name: 'spectre', ai: 'SARG', radius: 30, fuzz: true }),
   3003: mon('BOSS', 'AB', 10, { name: 'baron of hell', ai: 'BOSS', radius: 24, height: 64 }),
+  // 정식판 (에피소드 2~4)
+  3005: mon('HEAD', 'A', 10, { name: 'cacodemon', ai: 'HEAD', radius: 31 }),
+  3006: mon('SKUL', 'AB', 10, { name: 'lost soul', ai: 'SKUL', radius: 16, bright: true, noCount: true }),
+  16: mon('CYBR', 'AB', 10, { name: 'cyberdemon', ai: 'CYBR', radius: 40, height: 110 }),
+  7: mon('SPID', 'AB', 10, { name: 'spider mastermind', ai: 'SPID', radius: 128, height: 100 }),
 
   // ----- 통 -----
   2035: mk('BAR1', 'AB', 6, { solid: true, radius: 10, height: 42, name: 'barrel', ai: 'BAR1', shootable: true }),

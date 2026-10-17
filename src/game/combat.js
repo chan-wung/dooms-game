@@ -1,6 +1,6 @@
 import { Physics } from './physics.js';
 import { LINE_FLAGS } from '../wad/level.js';
-import { THING_INFO } from './info.js';
+import { THING_INFO, countsKill } from './info.js';
 import { Mobj } from './mobj.js';
 
 /**
@@ -189,7 +189,8 @@ export function killMobj(game, source, target) {
   target.missile = false;
   target.corpse = true;
   target.height = target.height / 4;
-  if (source?.isPlayer && target.info.monster) game.killsFound++;
+  target.floating = false; target.skullFly = false;   // 떠다니던 것도 떨어진다
+  if (source?.isPlayer && countsKill(target.info)) game.killsFound++;
 
   const xdie = target.ai.states.xdie && target.health < -target.ai.hp;
   target.setState(xdie ? 'xdie' : 'die', game);
@@ -210,6 +211,7 @@ export function radiusAttack(game, spot, source, damage) {
   const victims = [...game.shootables];
   if (game.player.shootable) victims.push(game.player);
   for (const t of victims) {
+    if (t.ai?.noRadiusDamage) continue;                  // 사이버데몬·스파이더는 폭발에 맞지 않는다
     let dist = Math.max(Math.abs(t.x - spot.x), Math.abs(t.y - spot.y)) - t.radius;
     if (dist < 0) dist = 0;
     if (dist >= damage) continue;

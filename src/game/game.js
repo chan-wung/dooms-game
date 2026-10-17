@@ -4,6 +4,7 @@ import { Player } from './player.js';
 import { Specials } from './specials.js';
 import { Mobj, spawnMobjs, kindInfo } from './mobj.js';
 import { touchSpecial } from './items.js';
+import { countsKill } from './info.js';
 import { ACTIONS, moveMobj, nightmareRespawn } from './monsters.js';
 import { setupWeapons } from './weapons.js';
 import { sectorAt } from '../render/bsp.js';
@@ -61,7 +62,7 @@ export class Game {
     this.dirty = false;
     this.itemsFound = 0; this.killsFound = 0;
     this.itemsTotal = mobjs.filter((m) => m.info.countItem).length;
-    this.killsTotal = mobjs.filter((m) => m.info.monster).length;
+    this.killsTotal = mobjs.filter((m) => countsKill(m.info)).length;
 
     if (carry) this.player.importState(carry);   // 이전 맵에서 이어받은 체력·무기·탄약
     setupWeapons(this, this.player);

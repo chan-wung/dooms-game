@@ -15,6 +15,16 @@ const XSPEED = [1, 0.717, 0, -0.717, -1, -0.717, 0, 0.717];  // 8방향 이동 �
 const YSPEED = [0, 0.717, 1, 0.717, 0, -0.717, -1, -0.717];
 const OPPOSITE = [4, 5, 6, 7, 0, 1, 2, 3, DI_NODIR];
 const DIAGS = [3, 1, 5, 7]; // [(dy<0)<<1 + (dx>0)] → NW, NE, SW, SE
+const FLOAT_SPEED = 4, SKULL_SPEED = 20;
+
+/** 보스 맵: 이 종류(doomednum)가 모두 죽으면 then (floor = 태그 666 바닥 내림, door = 태그 666 문 열기, exit = 맵 끝) */
+const BOSS_MAPS = {
+  E1M8: { type: 3003, then: 'floor' },   // 바론 오브 헬
+  E2M8: { type: 16, then: 'exit' },      // 사이버데몬
+  E3M8: { type: 7, then: 'exit' },       // 스파이더 마스터마인드
+  E4M6: { type: 16, then: 'door' },
+  E4M8: { type: 7, then: 'floor' },
+};
 
 /** 이 몬스터의 소리 종류(see/attack/pain/die …) 하나를 낸다 (여러 개면 무작위) */
 const say = (game, m, kind) => {
@@ -40,7 +50,18 @@ function lookForPlayers(game, m, allAround) {
 // ---------- 이동 ----------
 /** 몬스터 이동 규칙으로 (nx, ny) 로 이동 시도 */
 function tryMoveMobj(game, m, nx, ny) {
-  return game.physics.tryMove(m, nx, ny, { ignore: m, monster: true, dropoff: m.corpse });
+  return game.physics.tryMove(m, nx, ny, { ignore: m, monster: true, dropoff: m.corpse || m.floating });   // 떠다니는 것은 낭떠러지를 겁내지 않는다
+}
+
+/** 떠다니는 몬스터가 턱·천장에 막혔을 때: 높이만 바꾸면 지나갈 수 있으면 위/아래로 4 만큼 (원작 P_Move 의 floatok) */
+function floatPast(game, m, nx, ny) {
+  const r = game.physics.check(nx, ny, m.z, m.height, m.radius, { ignore: m, monster: true });
+  const floorz = r.floorz, ceilz = r.ceilz;
+  if (ceilz - floorz < m.height) return false;
+  const tz = m.z < floorz ? floorz : ceilz - m.height;
+  if (game.physics.check(nx, ny, tz, m.height, m.radius, { ignore: m, monster: true }).blocked) return false;   // 벽이나 다른 물체
+  m.z += m.z < floorz ? FLOAT_SPEED : -FLOAT_SPEED;
+  return true;
 }
 
 /** 한 걸음 (speed × 방향). 막히면 문을 열어 본다 */
@@ -54,11 +75,11 @@ function move(game, m) {
     for (const ld of game.physics.result.blockers) {
       if (ld.special === 1 && game.specials.monsterUse(ld, m)) good = true;
     }
-    if (good) m.moveDir = DI_NODIR;
-    return good;
+    if (good) { m.moveDir = DI_NODIR; return true; }
+    return !!m.floating && floatPast(game, m, nx, ny);
   }
   game.specials.crossLines(m, ox, oy);   // 텔레포트 선 · 문 · 리프트 선을 밟았으면 작동 (텔레포트하면 floorz 도 새 자리 것)
-  m.z = m.floorz;
+  if (!m.floating) m.z = m.floorz;
   return true;
 }
 
@@ -110,7 +131,9 @@ function checkMissileRange(game, m) {
   if (m.reaction) return false;                         // 아직 깨어난 지 얼마 안 됨
   let dist = approxDist(m.x - m.target.x, m.y - m.target.y) - 64;
   if (!m.ai.melee) dist -= 128;                          // 근접 공격이 없으면 더 자주 쏜다
-  dist = Math.min(200, Math.floor(dist));
+  dist = Math.floor(dist);
+  if (m.ai.missileHalf) dist >>= 1;                      // 사이버데몬·스파이더·로스트 소울은 더 자주
+  dist = Math.min(200, m.ai.missileCap ?? 200, dist);
   return !(game.rnd() < dist);
 }
 
@@ -203,6 +226,58 @@ export const ACTIONS = {
     spawnMissile(game, m, m.target, 'bruiserShot');
   },
 
+  headAttack(m, game) {
+    if (!m.target) return;
+    faceTarget(m, game);
+    if (checkMeleeRange(game, m)) { damageMobj(game, m.target, m, m, ((game.rnd() % 6) + 1) * 10); return; }
+    spawnMissile(game, m, m.target, 'headShot');
+  },
+
+  /** 로스트 소울: 대상을 향해 속도 20 으로 돌진 (부딪히면 skullMove 가 멈춘다) */
+  skullAttack(m, game) {
+    const t = m.target;
+    if (!t) return;
+    m.skullFly = true;
+    say(game, m, 'attack');
+    faceTarget(m, game);
+    m.momx = SKULL_SPEED * Math.cos(m.angle); m.momy = SKULL_SPEED * Math.sin(m.angle);
+    const tics = Math.max(1, approxDist(t.x - m.x, t.y - m.y) / SKULL_SPEED);
+    m.momz = (t.z + t.height / 2 - m.z) / tics;
+  },
+
+  cyberAttack(m, game) {
+    if (!m.target) return;
+    faceTarget(m, game);
+    spawnMissile(game, m, m.target, 'rocket');
+  },
+
+  /** 발소리 + 쫓기 (사이버데몬 발굽, 스파이더·사이버데몬 쇳소리) */
+  hoof(m, game) { game.playSound('HOOF', m); ACTIONS.chase(m, game); },
+  metal(m, game) { game.playSound('METAL', m); ACTIONS.chase(m, game); },
+
+  /** 스파이더: 대상이 안 보이거나 죽었으면 쏘기를 멈춘다 (가끔은 그래도 계속) */
+  spidRefire(m, game) {
+    faceTarget(m, game);
+    if (game.rnd() < 10) return;
+    if (!m.target || m.target.health <= 0 || !checkSight(game, m, m.target)) m.setState('run', game);
+  },
+
+  /** BFG 공이 터질 때: 쏜 사람 위치에서 공이 날아간 방향 ±45° 로 광선 40 줄, 맞은 것마다 15d8 */
+  bfgSpray(m, game) {
+    const owner = m.owner;
+    if (!owner) return;
+    for (let i = 0; i < 40; i++) {
+      const an = m.angle - Math.PI / 4 + (Math.PI / 2 / 40) * i;
+      const aim = aimLineAttack(game, owner, an, 16 * 64);
+      if (!aim) continue;
+      const t = aim.target;
+      game.spawnKind('bfgHit', t.x, t.y, t.z + t.height / 4);
+      let damage = 0;
+      for (let j = 0; j < 15; j++) damage += (game.rnd() & 7) + 1;
+      damageMobj(game, t, owner, owner, damage);
+    }
+  },
+
   pain(m, game) { say(game, m, 'pain'); },
   scream(m, game) { say(game, m, 'die'); },
   xscream(m, game) { say(game, m, 'xdie'); },
@@ -213,11 +288,14 @@ export const ACTIONS = {
   /** 폭발 (통, 로켓): 반경 128 안에 거리에 따라 약해지는 데미지 */
   explode(m, game) { radiusAttack(game, m, m.target, 128); },
 
-  /** E1M8: 바론이 모두 죽으면 출구 쪽 바닥(태그 666)이 내려간다 */
+  /** 보스 맵: 그 맵의 보스가 모두 죽으면 바닥이 내려가거나(태그 666) 문이 열리거나 바로 맵이 끝난다 (원작 A_BossDeath) */
   bossDeath(m, game) {
-    if (game.level.name !== 'E1M8') return;
-    if (game.mobjs.some((o) => o.type === 3003 && o !== m && o.health > 0)) return;
-    game.specials.doFloor({ tag: 666 }, 'lowerFloorToLowest');
+    const boss = BOSS_MAPS[game.level.name];
+    if (!boss || m.type !== boss.type || game.player.dead) return;
+    if (game.mobjs.some((o) => o.type === boss.type && o !== m && o.health > 0)) return;
+    if (boss.then === 'floor') game.specials.doFloor({ tag: 666 }, 'lowerFloorToLowest');
+    else if (boss.then === 'door') game.specials.doDoor({ tag: 666 }, 'blazeOpen');
+    else game.exitLevel(false);
   },
 };
 
@@ -239,7 +317,7 @@ export function spawnMissile(game, source, dest, kind) {
 
 /** 쏜 직후 반 걸음 앞으로 내보내고, 그 자리가 막혔으면 바로 터진다 */
 export function startMissile(game, m) {
-  game.playSound(m.ai.missile.sound, m);
+  if (m.ai.missile.sound) game.playSound(m.ai.missile.sound, m);
   m.tics -= game.rnd() & 3;
   if (m.tics < 1) m.tics = 1;
   m.x += m.momx / 2; m.y += m.momy / 2; m.z += m.momz / 2;
@@ -251,6 +329,7 @@ export function explodeMissile(game, m) {
   game.playSound(m.ai.missile.deathSound, m);
   m.momx = m.momy = m.momz = 0;
   m.missile = false;
+  if (m.ai.dieSprite) m.sprite = m.ai.dieSprite;   // 플라즈마·BFG 는 터지는 그림이 따로 있다
   m.setState('die', game);
   m.tics -= game.rnd() & 3;
   if (m.tics < 1) m.tics = 1;
@@ -326,8 +405,55 @@ export function moveMobj(game, m) {
     return;
   }
 
+  if (m.skullFly) { skullMove(game, m); return; }
   if (m.momx || m.momy) xyMove(game, m);
-  zMove(game, m);
+  if (m.floating) floatZMove(game, m);
+  else if (!(m.corpse && m.ai.noGravity)) zMove(game, m);
+}
+
+/** (x, y) 에서 m 과 부딪히는 다른 물체 (없으면 null) */
+function thingAt(game, m, x, y) {
+  const victims = game.player.shootable ? [...game.shootables, game.player] : game.shootables;
+  for (const t of victims) {
+    if (t === m) continue;
+    if (Math.abs(t.x - x) >= t.radius + m.radius || Math.abs(t.y - y) >= t.radius + m.radius) continue;
+    if (m.z > t.z + t.height || m.z + m.height < t.z) continue;
+    return t;
+  }
+  return null;
+}
+
+/** 로스트 소울 돌진: 물체에 부딪히면 3d8 피해, 벽이든 물체든 부딪히면 멈추고 다시 떠다닌다 (마찰 없음) */
+function skullMove(game, m) {
+  let stop = false;
+  splitMove(m.momx, m.momy, MAXMOVE / 2, (px, py) => {
+    const nx = m.x + px, ny = m.y + py;
+    const hit = thingAt(game, m, nx, ny);
+    if (hit) { damageMobj(game, hit, m, m, ((game.rnd() % 8) + 1) * 3); stop = true; return false; }
+    if (!tryMoveMobj(game, m, nx, ny)) { stop = true; return false; }
+  });
+  if (stop || (!m.momx && !m.momy)) {
+    m.skullFly = false;
+    m.momx = m.momy = m.momz = 0;
+    if (!m.corpse) m.setState('stand', game);
+    return;
+  }
+  floatZMove(game, m);
+}
+
+/** 떠다니는 몬스터의 높이: 대상의 높이 쪽으로 천천히 오르내린다. 바닥·천장에 닿으면 멈춤 (돌진 중이면 튕김) */
+function floatZMove(game, m) {
+  const r = game.physics.check(m.x, m.y, m.z, m.height, m.radius, { ignore: m, monster: true });
+  m.floorz = r.floorz; m.ceilz = r.ceilz;
+  const t = m.target;
+  if (t && !m.skullFly && !m.corpse) {
+    const dist = approxDist(t.x - m.x, t.y - m.y), delta = t.z + m.height / 2 - m.z;
+    if (delta < 0 && dist < -delta * 3) m.z -= FLOAT_SPEED;
+    else if (delta > 0 && dist < delta * 3) m.z += FLOAT_SPEED;
+  }
+  m.z += m.momz;
+  if (m.z <= m.floorz) { m.z = m.floorz; m.momz = m.skullFly ? -m.momz : 0; }
+  if (m.z + m.height > m.ceilz) { m.z = Math.max(m.floorz, m.ceilz - m.height); m.momz = m.skullFly ? -m.momz : 0; }
 }
 
 function xyMove(game, m) {

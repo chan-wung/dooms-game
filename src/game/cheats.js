@@ -4,10 +4,14 @@ import { POWER_TICS } from './items.js';
  * 치트 (원작 st_stuff.c). 키보드로 치는 코드와 옵션 메뉴의 CHEATS 가 같은 함수를 부른다.
  * 오토맵 보기(IDDT)와 맵 이동(IDCLEV)은 화면 쪽 상태가 필요해서 main.js 가 처리하고, 여기서는 코드 해석만 한다.
  */
-const WEAPON_LIST = ['fist', 'pistol', 'shotgun', 'chaingun', 'chainsaw', 'rocketLauncher'];   // 플라즈마·BFG 는 셰어웨어에 그림이 없다
+const WEAPON_LIST = ['fist', 'pistol', 'shotgun', 'chaingun', 'chainsaw', 'rocketLauncher'];
+const REGISTERED_WEAPONS = ['plasmaGun', 'bfg'];   // 셰어웨어 WAD 에는 그림이 없어 정식판에서만 준다 (game.registered)
 
 const fullAmmo = (p) => { for (const k of Object.keys(p.ammo)) p.ammo[k] = p.maxAmmo[k]; };
-const fullWeapons = (p) => { for (const w of WEAPON_LIST) p.weapons.add(w); };
+const fullWeapons = (game, p) => {
+  for (const w of WEAPON_LIST) p.weapons.add(w);
+  if (game.registered) for (const w of REGISTERED_WEAPONS) p.weapons.add(w);
+};
 const blueArmor = (p) => { p.armor = 200; p.armorType = 2; };
 
 /** IDDQD: 무적 (켜면 체력도 100 으로) */
@@ -30,7 +34,7 @@ export function toggleNoclip(game) {
 export function giveKfa(game) {
   const p = game.player;
   if (p.dead) return;
-  fullWeapons(p); fullAmmo(p); blueArmor(p);
+  fullWeapons(game, p); fullAmmo(p); blueArmor(p);
   Object.assign(p.keys, { blue: true, yellow: true, red: true });
   game.say('Very Happy Ammo Added', true);
 }
@@ -39,7 +43,7 @@ export function giveKfa(game) {
 export function giveFa(game) {
   const p = game.player;
   if (p.dead) return;
-  fullWeapons(p); fullAmmo(p); blueArmor(p);
+  fullWeapons(game, p); fullAmmo(p); blueArmor(p);
   game.say('Ammo (no keys) Added', true);
 }
 

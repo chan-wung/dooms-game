@@ -63,7 +63,10 @@ export class Menu {
     a.play('SWTCHX');
     switch (this.state) {
       case 'main': if (a.hasGame()) this.resume(); else this.show('title'); break;
-      case 'skill': case 'options': this.show('main', this.state === 'skill' ? 'new' : 'options'); break;
+      case 'skill':
+        if (this.episode) this.show('episode', `ep${this.episode}`); else this.show('main', 'new');
+        break;
+      case 'episode': case 'options': this.show('main', this.state === 'episode' ? 'new' : 'options'); break;
       case 'sound': this.show('options', 'sound'); break;
       case 'cheats': this.show('options', 'cheats'); break;
       case 'load': this.show('main', 'load'); break;
@@ -88,7 +91,11 @@ export class Menu {
         L.title = (f) => hud.blit(f, hud.patch('M_DOOM'), 94, 2);
         if (a.hasGame()) I.push({ id: 'resume', text: 'RESUME', act: () => { a.play('PISTOL'); this.resume(); } });
         else if (a.hasAuto?.()) I.push({ id: 'continue', text: 'CONTINUE', act: () => { if (a.loadSlot(0)) a.play('PISTOL'); else a.play('OOF'); } });
-        I.push({ id: 'new', patch: 'M_NGAME', act: () => { a.play('PISTOL'); this.show('skill', clamp(s.skill - 1, 0, 4)); } });
+        I.push({ id: 'new', patch: 'M_NGAME', act: () => {
+          a.play('PISTOL');
+          this.episode = null;
+          if ((a.episodes?.() ?? []).length > 1) this.show('episode'); else this.show('skill', clamp(s.skill - 1, 0, 4));   // 정식판: 에피소드부터 고른다
+        } });
         I.push({ id: 'options', patch: 'M_OPTION', act: () => { a.play('PISTOL'); this.mapIdx = Math.max(0, a.maps().indexOf(a.currentMap())); this.show('options'); } });
         I.push({ id: 'load', patch: 'M_LOADG', act: () => { a.play('PISTOL'); this.show('load'); } });
         I.push({ id: 'save', patch: 'M_SAVEG', act: () => { if (a.canSave()) { a.play('PISTOL'); this.show('save'); } else a.play('OOF'); } });
@@ -101,6 +108,15 @@ export class Menu {
         I.forEach((it, i) => Object.assign(it, { x: 97, y: 56 + 16 * i, h: 16, rx0: 80, rx1: 250 }));
         break;
       }
+      case 'episode': {
+        L.skullX = 16;
+        L.title = (f) => hud.blit(f, hud.patch('M_EPISOD'), 54, 38);
+        a.episodes().forEach((ep, i) => I.push({
+          id: `ep${ep}`, patch: `M_EPI${ep}`, x: 48, y: 63 + 16 * i, h: 16, rx0: 40, rx1: 290,
+          act: () => { a.play('PISTOL'); this.episode = ep; this.show('skill', clamp(s.skill - 1, 0, 4)); },
+        }));
+        break;
+      }
       case 'skill': {
         L.skullX = 16;
         L.title = (f) => { hud.blit(f, hud.patch('M_NEWG'), 96, 14); hud.blit(f, hud.patch('M_SKILL'), 54, 38); };
@@ -108,8 +124,8 @@ export class Menu {
           id: `skill${i}`, patch, x: 48, y: 63 + 16 * i, h: 16, rx0: 40, rx1: 270,
           act: () => {
             a.play('PISTOL');
-            if (a.hasGame()) this.ask(['START A NEW GAME?', 'YOUR CURRENT PROGRESS WILL BE LOST.'], () => a.newGame(i + 1), ['skill', i]);
-            else a.newGame(i + 1);
+            if (a.hasGame()) this.ask(['START A NEW GAME?', 'YOUR CURRENT PROGRESS WILL BE LOST.'], () => a.newGame(i + 1, this.episode), ['skill', i]);
+            else a.newGame(i + 1, this.episode);
           },
         }));
         break;

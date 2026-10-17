@@ -146,6 +146,7 @@ const openMap = (name, carry = null, saved = null) => {
   try {
     const lvl = loadLevel(wad, name);
     const g = saved ? loadGame(lvl, saved.skill, saved.game) : new Game(lvl, settings.skill, 1, carry);
+    g.registered = wad.has('PLSGA0');   // 플라즈마·BFG 그림이 있는 WAD (정식판) 에서만 치트로 준다
     startWipe();
     level = lvl; game = g;
     levelStart = saved ? saved.levelStart : carry;
@@ -310,7 +311,11 @@ const startMenuActions = () => ({
   slotNames: () => listSlots().map((s, n) => (s ? (n === 0 ? `AUTO  ${s.map}` : s.name) : null)),
   loadSlot,
   saveSlot,
-  newGame: (skill) => { settings.skill = skill; saveSettings(); menu.close(); openMap(wad.getMapNames()[0]); lockPointer(); },
+  episodes: () => [1, 2, 3, 4].filter((n) => wad.has(`E${n}M1`)),
+  newGame: (skill, episode) => {
+    settings.skill = skill; saveSettings(); menu.close();
+    openMap(episode ? `E${episode}M1` : wad.getMapNames()[0]); lockPointer();
+  },
   quitToTitle,
   changeWad,
   settingsChanged: applySettings,
@@ -332,7 +337,7 @@ const startWad = (buf, source, persist = false) => {
     music.setEnabled(!!settings.musicOn);
     menu = new Menu(hud, startMenuActions(), settings);
     inter = new Intermission(hud, (name) => sound.play(name));
-    finale = new Finale(hud);
+    finale = new Finale(hud, (name) => sound.play(name));
     applyVideo();
     window.gfx = gfx; window.sound = sound; window.music = music; window.menu = menu; window.settings = settings;
   } catch (err) {
@@ -573,7 +578,7 @@ const beginIntermission = () => {
   document.exitPointerLock?.();
   $overlay.hidden = true; $msg.textContent = '';
   acc = 0;
-  if (!next) { finale.start(); appState = 'finale'; }                  // 원작: 에피소드 마지막 맵은 점수 화면 없이 바로 엔딩
+  if (!next) { finale.start(Number(/^E(\d)/.exec(mapName)?.[1] ?? 1) - 1); appState = 'finale'; }                 // 원작: 에피소드 마지막 맵은 점수 화면 없이 바로 엔딩
   else {
     inter.start({
       map: mapName, next, secretExit: ex.secret, time: ex.time,

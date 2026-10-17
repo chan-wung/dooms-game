@@ -1,5 +1,5 @@
 import { sectorAt } from '../render/bsp.js';
-import { THING_INFO, INVISIBLE_THINGS } from './info.js';
+import { THING_INFO, INVISIBLE_THINGS, countsKill } from './info.js';
 import { AI } from './states.js';
 
 /**
@@ -50,6 +50,8 @@ export class Mobj {
       this.sprite = ai.sprite;
     }
     if (ai.effect) { this.sprite = ai.sprite; this.hidden = false; }
+    this.floating = !!ai.float;   // 카코데몬·로스트 소울: 중력 없이 떠다닌다
+    this.skullFly = false;        // 로스트 소울이 돌진하는 중
     this.setStateNoAction(ai.states.stand ? 'stand' : 'fly');
   }
 
@@ -107,7 +109,7 @@ export class Mobj {
     game.moveMobj(this);
     if (this.removed) return;
     if (this.tics !== -1) { if (--this.tics <= 0) this.advance(game); }
-    else if (this.corpse && this.info.monster && game.skill === 5) game.nightmareRespawn(this);   // 악몽: 시체가 다시 일어난다
+    else if (this.corpse && countsKill(this.info) && game.skill === 5) game.nightmareRespawn(this);   // 악몽: 시체가 다시 일어난다
   }
 }
 

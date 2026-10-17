@@ -1,5 +1,5 @@
-/** 맵 진행 순서 (에피소드 1~3, 비밀 맵 M9) */
-const RETURN_FROM_SECRET = { 1: 4, 2: 6, 3: 7 }; // 비밀 맵(M9)에서 나오면 돌아가는 곳
+/** 맵 진행 순서 (에피소드 1~4, 비밀 맵 M9) */
+const RETURN_FROM_SECRET = { 1: 4, 2: 6, 3: 7, 4: 3 }; // 비밀 맵(M9)에서 나오면 돌아가는 곳
 
 /** 출구 다음 맵 (일반/비밀 출구). null 이면 에피소드 끝 */
 export const nextMapName = (name, secret) => {

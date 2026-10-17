@@ -6,7 +6,7 @@ import { TWO_PI, normAngle, spread } from './util.js';
  * 플레이어 무기 (원작 p_pspr.c). 무기 스프라이트는 "psprite" 상태 머신으로 진행한다.
  *  - 상태 = [프레임, tic, 동작, 풀브라이트]. 상태에 들어갈 때 동작이 실행되고, tic 0 상태는 바로 다음으로 넘어간다.
  *  - 화면 위치 sx, sy: 가운데 = 1, 위 = 32(WEAPONTOP) ~ 아래 = 128(WEAPONBOTTOM).
- * 셰어웨어에 스프라이트가 없는 플라즈마/BFG 는 만들지 않았다.
+ * 플라즈마/BFG 는 정식판 WAD(DOOM.WAD 등)에만 그림이 있다. 셰어웨어에서는 주울 수도, 치트로 받을 수도 없다.
  */
 const S = (f, t, a = null, b = false) => ({ f, t, a, b });
 const WEAPON_TOP = 32, WEAPON_BOTTOM = 128, SWITCH_SPEED = 6;
@@ -46,11 +46,26 @@ export const WEAPONS = {
     attack: [S('B', 8, 'gunFlash'), S('B', 12, 'fireMissile'), S('B', 0, 'refire')],
     flashSprite: 'MISF', flash: [S('A', 3, 'light1', true), S('B', 4, null, true), S('C', 4, 'light2', true), S('D', 4, 'light2', true)],
   },
+  plasmaGun: {
+    sprite: 'PLSG', ammo: 'cell',
+    ready: [S('A', 1, 'ready')], up: [S('A', 1, 'raise')], down: [S('A', 1, 'lower')],
+    attack: [S('A', 3, 'firePlasma'), S('B', 20, 'refire')],
+    // 원작: 쏠 때마다 두 화염 중 하나만 무작위로 (A 또는 B 한 프레임)
+    flashSprite: 'PLSF', flash: [S('A', 4, 'light1', true), S('B', 4, 'light1', true)], flashSingle: true,
+  },
+  bfg: {
+    sprite: 'BFGG', ammo: 'cell', ammoPerShot: 40,
+    ready: [S('A', 1, 'ready')], up: [S('A', 1, 'raise')], down: [S('A', 1, 'lower')],
+    attack: [S('A', 20, 'bfgSound'), S('B', 10, 'gunFlash'), S('B', 10, 'fireBFG'), S('B', 20, 'refire')],
+    flashSprite: 'BFGF', flash: [S('A', 11, 'light1', true), S('B', 6, 'light2', true)],
+  },
 };
 
 /** 숫자 키 → 무기 */
-const KEY_WEAPONS = { 2: 'pistol', 3: 'shotgun', 4: 'chaingun', 5: 'rocketLauncher' };
-const CYCLE = ['fist', 'chainsaw', 'pistol', 'shotgun', 'chaingun', 'rocketLauncher'];
+const KEY_WEAPONS = { 2: 'pistol', 3: 'shotgun', 4: 'chaingun', 5: 'rocketLauncher', 6: 'plasmaGun', 7: 'bfg' };
+const CYCLE = ['fist', 'chainsaw', 'pistol', 'shotgun', 'chaingun', 'rocketLauncher', 'plasmaGun', 'bfg'];
+/** 한 번 쏠 때 드는 탄약 (BFG 만 40) */
+const ammoPerShot = (w) => WEAPONS[w].ammoPerShot ?? 1;
 
 export const newPsprites = () => ({
   weapon: { label: 'down', idx: 0, tics: 1, frame: 0, bright: false, sx: 1, sy: WEAPON_BOTTOM },
@@ -86,7 +101,7 @@ function tickFlash(game, p) {
   if (!fl) return;
   if (--fl.tics > 0) return;
   const list = WEAPONS[p.readyWeapon].flash;
-  if (fl.idx + 1 < list.length) setFlash(game, p, fl.idx + 1);
+  if (fl.idx + 1 < list.length && !WEAPONS[p.readyWeapon].flashSingle) setFlash(game, p, fl.idx + 1);
   else { p.psp.flash = null; p.extraLight = 0; }
 }
 
@@ -126,18 +141,20 @@ export function cycleWeapon(p, dir) {
 
 const enoughAmmo = (p) => {
   const a = WEAPONS[p.readyWeapon].ammo;
-  return a === null || p.ammo[a] >= 1;
+  return a === null || p.ammo[a] >= ammoPerShot(p.readyWeapon);
 };
 
 /** 탄약이 부족하면 가장 좋은 다른 무기로 바꾼다 (원작 P_CheckAmmo). 충분하면 true */
 function checkAmmo(game, p) {
   if (enoughAmmo(p)) return true;
   const has = (w, ammo) => p.weapons.has(w) && p.ammo[ammo] >= 1;
-  if (has('chaingun', 'clip')) p.pendingWeapon = 'chaingun';
+  if (has('plasmaGun', 'cell')) p.pendingWeapon = 'plasmaGun';
+  else if (has('chaingun', 'clip')) p.pendingWeapon = 'chaingun';
   else if (has('shotgun', 'shell')) p.pendingWeapon = 'shotgun';
   else if (p.ammo.clip >= 1 && p.weapons.has('pistol')) p.pendingWeapon = 'pistol';
   else if (p.weapons.has('chainsaw')) p.pendingWeapon = 'chainsaw';
   else if (has('rocketLauncher', 'rocket')) p.pendingWeapon = 'rocketLauncher';
+  else if (p.weapons.has('bfg') && p.ammo.cell >= ammoPerShot('bfg')) p.pendingWeapon = 'bfg';
   else p.pendingWeapon = 'fist';
   setWeaponState(game, p, 'down');
   return false;
@@ -150,7 +167,7 @@ function fireWeapon(game, p) {
 }
 
 // ---------- 사격 ----------
-const useAmmo = (p) => { const a = WEAPONS[p.readyWeapon].ammo; if (a) p.ammo[a]--; };
+const useAmmo = (p) => { const a = WEAPONS[p.readyWeapon].ammo; if (a) p.ammo[a] = Math.max(0, p.ammo[a] - ammoPerShot(p.readyWeapon)); };
 
 /** 조준: 정면 → 위 5.6° → 아래 5.6° 순으로 목표를 찾는다. 높이(slope)만 맞추고 방향은 그대로 */
 function bulletSlope(game, p) {
@@ -175,7 +192,8 @@ const ACTIONS = {
     if (p.readyWeapon === 'chainsaw' && ps.label === 'ready' && ps.idx === 0 && !p.cmd?.fire) game.playSound('SAWIDL');
     if (p.pendingWeapon || p.dead) { setWeaponState(game, p, 'down'); return; }
     if (p.cmd?.fire) {
-      if (!p.attackDown || (p.readyWeapon !== 'rocketLauncher')) { p.attackDown = true; fireWeapon(game, p); return; }
+      // 로켓·BFG 는 누르고 있어도 처음 한 발만 (원작)
+      if (!p.attackDown || (p.readyWeapon !== 'rocketLauncher' && p.readyWeapon !== 'bfg')) { p.attackDown = true; fireWeapon(game, p); return; }
     } else {
       p.attackDown = false;
     }
@@ -233,6 +251,19 @@ const ACTIONS = {
   fireMissile(game, p) {
     useAmmo(p);
     spawnPlayerMissile(game, p, 'rocket');
+  },
+
+  firePlasma(game, p) {
+    useAmmo(p);
+    setFlash(game, p, game.rnd() & 1);
+    spawnPlayerMissile(game, p, 'plasma');
+  },
+
+  bfgSound(game) { game.playSound('BFG'); },
+
+  fireBFG(game, p) {
+    useAmmo(p);
+    spawnPlayerMissile(game, p, 'bfgBall');
   },
 
   punch(game, p) {

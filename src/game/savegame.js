@@ -17,6 +17,7 @@ const MOBJ_FIELDS = [
   'moveDir', 'moveCount', 'reaction', 'threshold', 'justHit', 'justAttacked', 'ambush', 'corpse', 'dropped',
   'missile', 'speed', 'damageScale', 'solid', 'shootable', 'hidden', 'height', 'floorz', 'ceilz',
   'spawnX', 'spawnY', 'spawnAngle', 'spawnAmbush',
+  'floating', 'skullFly', 'sprite',   // 예전 세이브에는 없다 (null 이면 새로 만든 값 그대로)
 ];
 const PLAYER_FIELDS = [
   'x', 'y', 'z', 'angle', 'momx', 'momy', 'momz', 'floorz', 'ceilz', 'viewheight', 'deltaViewheight', 'bob', 'viewz',

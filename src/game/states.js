@@ -82,6 +82,65 @@ export const AI = {
     melee: 'attack', missile: 'attack', painState: 'pain',
     sounds: { see: 'BRSSIT', melee: 'CLAW', pain: 'POPAIN', die: 'BRSDTH', active: 'DMACT' },
   },
+  // ---------- 카코데몬 (떠다닌다) ----------
+  HEAD: {
+    hp: 400, speed: 8, painChance: 128, mass: 400, reaction: 8, float: true,
+    states: {
+      stand: [S('A', 10, 'look')],
+      run: [S('A', 3, 'chase')],
+      attack: [S('B', 5, 'faceTarget'), S('C', 5, 'faceTarget'), S('D', 5, 'headAttack', true)],
+      pain: [S('E', 3), S('E', 3, 'pain'), S('F', 6)],
+      die: [S('G', 8), S('H', 8, 'scream'), S('I', 8), S('J', 8), S('K', 8, 'fall'), S('L', -1)],
+    },
+    after: { stand: 'stand', run: 'run', attack: 'run', pain: 'run' },
+    melee: 'attack', missile: 'attack', painState: 'pain',
+    sounds: { see: 'CACSIT', pain: 'DMPAIN', die: 'CACDTH', active: 'DMACT' },
+  },
+  // ---------- 로스트 소울 (떠다니다가 돌진한다. 킬 수에 들어가지 않는다) ----------
+  SKUL: {
+    hp: 100, speed: 8, painChance: 256, mass: 50, reaction: 8, float: true, noGravity: true, noBlood: true, missileHalf: true,
+    states: {
+      stand: [S('A', 10, 'look', true), S('B', 10, 'look', true)],
+      run: [S('A', 6, 'chase', true), S('B', 6, 'chase', true)],
+      attack: [S('C', 10, 'faceTarget', true), S('D', 4, 'skullAttack', true)],
+      charge: [S('C', 4, null, true), S('D', 4, null, true)],
+      pain: [S('E', 3, null, true), S('E', 3, 'pain', true)],
+      die: [S('F', 6, null, true), S('G', 6, 'scream', true), S('H', 6, null, true), S('I', 6, 'fall', true), S('J', 6), S('K', 6)],
+    },
+    after: { stand: 'stand', run: 'run', attack: 'charge', charge: 'charge', pain: 'run', die: 'remove' },
+    missile: 'attack', painState: 'pain',
+    sounds: { attack: 'SKLATK', pain: 'DMPAIN', die: 'FIRXPL', active: 'DMACT' },
+  },
+  // ---------- 사이버데몬 (폭발 피해를 받지 않는다) ----------
+  CYBR: {
+    hp: 4000, speed: 16, painChance: 20, mass: 1000, reaction: 8, noRadiusDamage: true, missileHalf: true, missileCap: 160,
+    states: {
+      stand: [S('A', 10, 'look'), S('B', 10, 'look')],
+      run: [S('A', 3, 'hoof'), S('A', 3, 'chase'), S('B', 3, 'chase'), S('B', 3, 'chase'), S('C', 3, 'chase'), S('C', 3, 'chase'), S('D', 3, 'metal'), S('D', 3, 'chase')],
+      attack: [S('E', 6, 'faceTarget'), S('F', 12, 'cyberAttack'), S('E', 12, 'faceTarget'), S('F', 12, 'cyberAttack'), S('E', 12, 'faceTarget'), S('F', 12, 'cyberAttack')],
+      pain: [S('G', 10, 'pain')],
+      die: [S('H', 10), S('I', 10, 'scream'), S('J', 10), S('K', 10), S('L', 10), S('M', 10, 'fall'), S('N', 10), S('O', 10), S('P', 30), S('P', -1, 'bossDeath')],
+    },
+    after: { stand: 'stand', run: 'run', attack: 'run', pain: 'run' },
+    missile: 'attack', painState: 'pain',
+    sounds: { see: 'CYBSIT', pain: 'DMPAIN', die: 'CYBDTH', active: 'DMACT' },
+  },
+  // ---------- 스파이더 마스터마인드 (폭발 피해를 받지 않는다) ----------
+  SPID: {
+    hp: 3000, speed: 12, painChance: 40, mass: 1000, reaction: 8, noRadiusDamage: true, missileHalf: true,
+    states: {
+      stand: [S('A', 10, 'look'), S('B', 10, 'look')],
+      run: [S('A', 3, 'metal'), S('A', 3, 'chase'), S('B', 3, 'chase'), S('B', 3, 'chase'), S('C', 3, 'metal'), S('C', 3, 'chase'),
+        S('D', 3, 'chase'), S('D', 3, 'chase'), S('E', 3, 'metal'), S('E', 3, 'chase'), S('F', 3, 'chase'), S('F', 3, 'chase')],
+      attack: [S('A', 20, 'faceTarget')],
+      fire: [S('G', 4, 'sposAttack', true), S('H', 4, 'sposAttack', true), S('H', 1, 'spidRefire', true)],
+      pain: [S('I', 3), S('I', 3, 'pain')],
+      die: [S('J', 20, 'scream'), S('K', 10, 'fall'), S('L', 10), S('M', 10), S('N', 10), S('O', 10), S('P', 10), S('Q', 10), S('R', 10), S('S', 30), S('S', -1, 'bossDeath')],
+    },
+    after: { stand: 'stand', run: 'run', attack: 'fire', fire: 'fire', pain: 'run' },
+    missile: 'attack', painState: 'pain',
+    sounds: { see: 'SPISIT', attack: 'SHOTGN', pain: 'DMPAIN', die: 'SPIDTH', active: 'DMACT' },
+  },
   // ---------- 통 ----------
   BAR1: {
     hp: 20, speed: 0, painChance: 0, mass: 100, reaction: 0, noBlood: true,
@@ -104,6 +163,24 @@ export const AI = {
     states: { fly: [S('A', 4, null, true), S('B', 4, null, true)], die: [S('C', 6, null, true), S('D', 6, null, true), S('E', 6, null, true)] },
     after: { fly: 'fly', die: 'remove' },
   },
+  headShot: {    // 카코데몬 불덩이
+    sprite: 'BAL2', missile: { speed: 10, damage: 5, sound: 'FIRSHT', deathSound: 'FIRXPL' }, radius: 6, height: 8,
+    states: { fly: [S('A', 4, null, true), S('B', 4, null, true)], die: [S('C', 6, null, true), S('D', 6, null, true), S('E', 6, null, true)] },
+    after: { fly: 'fly', die: 'remove' },
+  },
+  plasma: {      // 플라즈마 (터질 때는 PLSE 그림)
+    sprite: 'PLSS', dieSprite: 'PLSE', missile: { speed: 25, damage: 5, sound: 'PLASMA', deathSound: 'FIRXPL' }, radius: 13, height: 8,
+    states: { fly: [S('A', 6, null, true), S('B', 6, null, true)], die: [...'ABCDE'].map((f) => S(f, 4, null, true)) },
+    after: { fly: 'fly', die: 'remove' },
+  },
+  bfgBall: {     // BFG 공 (터지면 쏜 사람 정면 90° 안에 광선 40 줄: bfgSpray)
+    sprite: 'BFS1', dieSprite: 'BFE1', missile: { speed: 25, damage: 100, sound: null, deathSound: 'RXPLOD' }, radius: 13, height: 8,
+    states: {
+      fly: [S('A', 4, null, true), S('B', 4, null, true)],
+      die: [S('A', 8, null, true), S('B', 8, null, true), S('C', 8, 'bfgSpray', true), S('D', 8, null, true), S('E', 8, null, true), S('F', 8, null, true)],
+    },
+    after: { fly: 'fly', die: 'remove' },
+  },
   rocket: {      // 로켓
     sprite: 'MISL', missile: { speed: 20, damage: 20, sound: 'RLAUNC', deathSound: 'BAREXP' }, radius: 11, height: 8,
     states: { fly: [S('A', 1, null, true)], die: [S('B', 8, 'explode', true), S('C', 6, null, true), S('D', 4, null, true)] },
@@ -114,6 +191,10 @@ export const AI = {
   puff: {        // 총알이 벽에 맞은 먼지
     sprite: 'PUFF', effect: true, radius: 0, height: 0, rise: 1,
     states: { fly: [S('A', 4, null, true), S('B', 4), S('C', 4), S('D', 4)] }, after: { fly: 'remove' },
+  },
+  bfgHit: {      // BFG 광선이 맞은 자리
+    sprite: 'BFE2', effect: true, radius: 0, height: 0,
+    states: { fly: [...'ABCD'].map((f) => S(f, 8, null, true)) }, after: { fly: 'remove' },
   },
   tfog: {        // 텔레포트 안개 (출발·도착 지점, 부활할 때)
     sprite: 'TFOG', effect: true, radius: 0, height: 0,
