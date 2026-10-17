@@ -3,20 +3,21 @@ import { LINE_FLAGS } from '../wad/level.js';
 import { Physics } from './physics.js';
 import { damageMobj } from './combat.js';
 import {
-  lowestFloorSurrounding, highestFloorSurrounding, nextHighestFloor, lowestCeilingSurrounding,
-  minSurroundingLight, maxSurroundingLight, nextSector,
+  lowestFloorSurrounding, highestFloorSurrounding, nextHighestFloor, lowestCeilingSurrounding, highestCeilingSurrounding,
+  shortestLowerTexture, minSurroundingLight, maxSurroundingLight, nextSector,
 } from './sectors.js';
 
 /**
  * 특수 효과 (원작 p_spec.c, p_doors.c, p_plats.c, p_floor.c, p_lights.c, p_switch.c 를 단순화).
  *  - thinker: 매 tic(1/35초) tick() 을 호출받는 움직이는 것들. true 를 돌려주면 제거된다.
  *  - 선 특수 효과 번호 → { 발동 방식(걷기/사용), 반복 여부, 동작 } 표.
- * 아직 안 한 것: 크러셔, 영구 리프트 (셰어웨어 맵에서는 쓰지 않는다).
+ * 원작 1.9 의 선 특수 효과를 모두 다룬다 (크러셔·영구 리프트·열쇠 고속문·몬스터 전용 텔레포트 포함).
  */
 const OK = 0, CRUSHED = 1, PASTDEST = 2;
 const VDOORSPEED = 2, VDOORWAIT = 150;
 const PLATSPEED = 1, PLATWAIT = 105; // 35 tic × 3초
 const FLOORSPEED = 1;
+const CEILSPEED = 1;
 const BUTTONTIME = 35;
 
 /**
@@ -85,6 +86,9 @@ class Door {
   tick() {
     const { game, sector: sec, type } = this;
     switch (this.direction) {
+      case 2: // 맵 시작 후 5분 기다렸다가 열림 (섹터 특수 14)
+        if (--this.countdown === 0) { this.direction = 1; this.type = 'normal'; this.sound(); }
+        break;
       case 0: // 위에서 대기
         if (--this.countdown === 0) {
           if (type === 'normal' || type === 'blazeRaise') this.direction = -1;
@@ -118,18 +122,20 @@ class Door {
 
 // ---------- thinker: 리프트 ----------
 class Plat {
-  /** type: downWaitUpStay | blazeDWUS | raiseToNearestAndChange */
+  /** type: downWaitUpStay | blazeDWUS | raiseToNearestAndChange | raiseAndChange | perpetual */
   constructor(game, sec, type, speed, low, high, wait, status) {
     this.game = game; this.sector = sec; this.type = type;
     this.speed = speed; this.low = low; this.high = high; this.wait = wait;
     this.status = status; this.count = 0;
+    this.oldStatus = null;        // 멈춤 선(54·89)으로 멈췄을 때 원래 상태 (status = 'stasis')
     sec.specialData = this;
-    game.playSound('PSTART', soundOrigin(sec));
+    game.playSound(type === 'raiseAndChange' || type === 'raiseToNearestAndChange' ? 'STNMOV' : 'PSTART', soundOrigin(sec));
   }
 
   tick() {
     const { game, sector: sec } = this;
     switch (this.status) {
+      case 'stasis': break;
       case 'up': {
         const res = movePlane(game, sec, this.speed, this.high, false, false, 1);
         if (res === CRUSHED) { this.count = this.wait; this.status = 'down'; game.playSound('PSTART', soundOrigin(sec)); }
@@ -155,22 +161,65 @@ class Plat {
 
 // ---------- thinker: 바닥 ----------
 class FloorMover {
-  /** change: 도착하면 바닥 무늬와 섹터 특수를 바꾼다 (도넛) = { tex, special } */
-  constructor(game, sec, direction, speed, dest, change = null) {
+  /**
+   * change: 도착하면 바닥 무늬와 섹터 특수를 바꾼다 (도넛, 내려가며 바꾸기) = { tex, special }
+   * crush: 끼인 것을 짓누르며 계속 올라간다 (특수 55·56·65·94)
+   */
+  constructor(game, sec, direction, speed, dest, change = null, crush = false) {
     this.game = game; this.sector = sec; this.direction = direction; this.speed = speed; this.dest = dest;
     this.changeTex = change ? change.tex : null; this.changeSpecial = change ? change.special : 0;   // 저장할 수 있게 값으로 둔다
+    this.crush = crush;
     sec.specialData = this;
   }
 
   tick() {
     const sec = this.sector;
-    const res = movePlane(this.game, sec, this.speed, this.dest, false, false, this.direction);
+    const res = movePlane(this.game, sec, this.speed, this.dest, !!this.crush, false, this.direction);
     if (!(this.game.time & 7)) this.game.playSound('STNMOV', soundOrigin(sec));
     if (res === PASTDEST) {
       this.game.playSound('PSTOP', soundOrigin(sec));
       if (this.changeTex) { sec.floorTex = this.changeTex; sec.floorFlat = null; sec.special = this.changeSpecial; }
       sec.specialData = null;
       return true;
+    }
+    return false;
+  }
+}
+
+// ---------- thinker: 천장 (크러셔) ----------
+class Ceiling {
+  /** type: lowerToFloor | raiseToHighest | lowerAndCrush | crushAndRaise | fastCrushAndRaise | silentCrushAndRaise */
+  constructor(game, sec, type, direction, speed, bottom, top, crush) {
+    this.game = game; this.sector = sec; this.type = type;
+    this.direction = direction; this.speed = speed; this.bottom = bottom; this.top = top; this.crush = crush;
+    this.oldDirection = 0;        // 멈춤 선(57·74)으로 멈췄을 때 원래 방향 (direction = 0)
+    this.tag = sec.tag;
+    sec.specialData = this;
+  }
+
+  get crusher() { return this.type.endsWith('CrushAndRaise') || this.type === 'crushAndRaise'; }
+
+  tick() {
+    const { game, sector: sec, type } = this;
+    const silent = type === 'silentCrushAndRaise';
+    if (this.direction === 0) return false;
+    if (!silent && !(game.time & 7)) game.playSound('STNMOV', soundOrigin(sec));
+    if (this.direction === 1) {
+      const res = movePlane(game, sec, this.speed, this.top, false, true, 1);
+      if (res !== PASTDEST) return false;
+      if (!this.crusher) { sec.specialData = null; return true; }
+      if (silent) game.playSound('PSTOP', soundOrigin(sec));
+      this.direction = -1;
+      return false;
+    }
+    const res = movePlane(game, sec, this.speed, this.bottom, this.crush, true, -1);
+    if (res === PASTDEST) {
+      if (!this.crusher) { sec.specialData = null; return true; }
+      if (silent) game.playSound('PSTOP', soundOrigin(sec));
+      if (type === 'crushAndRaise' || silent) this.speed = CEILSPEED;
+      this.direction = 1;
+    } else if (res === CRUSHED && type !== 'fastCrushAndRaise' && type !== 'lowerToFloor' && type !== 'raiseToHighest') {
+      this.speed = CEILSPEED / 8;   // 뭔가 끼면 천천히 짓누른다
     }
     return false;
   }
@@ -249,9 +298,9 @@ class WallScroll { // 특수 48: 벽 텍스처가 계속 흐름
 // ---------- 세이브/로드: thinker 직렬화 ----------
 const THINKER_KINDS = {
   door: Door, plat: Plat, floor: FloorMover, flash: LightFlash, strobe: Strobe,
-  glow: Glow, fire: FireFlicker, button: ButtonTimer, scroll: WallScroll,
+  glow: Glow, fire: FireFlicker, button: ButtonTimer, scroll: WallScroll, ceiling: Ceiling,
 };
-const CLAIMS_SECTOR = new Set([Door, Plat, FloorMover]);  // 만든 쪽이 sector.specialData 에 자신을 건다
+const CLAIMS_SECTOR = new Set([Door, Plat, FloorMover, Ceiling]);  // 만든 쪽이 sector.specialData 에 자신을 건다
 const RUNTIME_LINKS = ['game', 'rnd', 'specials'];         // 저장하지 않고 불러올 때 다시 연결
 
 /** thinker → 순수 데이터 (섹터/선은 인덱스로 참조) */
@@ -289,7 +338,7 @@ const FLOOR_NUMS = {
 };
 const KEY_DOORS = { 26: 'blue', 32: 'blue', 27: 'yellow', 34: 'yellow', 28: 'red', 33: 'red' };
 const MANUAL_DOORS = new Set([1, 26, 27, 28, 31, 32, 33, 34, 117, 118]);
-const MONSTER_CROSS = new Set([4, 10, 39, 88, 97]);   // 몬스터도 밟으면 작동하는 걷기 선 (원작 P_CrossSpecialLine): 문 열기, 리프트, 텔레포트
+const MONSTER_CROSS = new Set([4, 10, 39, 88, 97, 125, 126]);   // 몬스터도 밟으면 작동하는 걷기 선 (원작 P_CrossSpecialLine): 문 열기, 리프트, 텔레포트
 
 export class Specials {
   constructor(game) {
@@ -337,6 +386,41 @@ export class Specials {
     // 텔레포트 (뒷면에서 들어가면 무시)
     this.def(39, 'walk', false, (l, side, who) => this.teleport(l, side, who));
     this.def(97, 'walk', true, (l, side, who) => this.teleport(l, side, who));
+    // 몬스터만 쓰는 텔레포트
+    this.def(125, 'walk', false, (l, side, who) => who !== g.player && this.teleport(l, side, who));
+    this.def(126, 'walk', true, (l, side, who) => who !== g.player && this.teleport(l, side, who));
+
+    // ----- 그 밖의 바닥 (번호 → [발동, 반복]) -----
+    const more = (type, list) => { for (const [n, t, rep] of list) this.def(n, t, rep, (l) => this.doFloor(l, type)); };
+    more('raiseToTexture', [[30, 'walk', false], [96, 'walk', true]]);
+    more('lowerAndChange', [[37, 'walk', false], [84, 'walk', true]]);
+    more('raiseFloorCrush', [[56, 'walk', false], [94, 'walk', true], [55, 'use', false], [65, 'use', true]]);
+    more('raiseFloor24', [[58, 'walk', false], [92, 'walk', true]]);
+    more('raiseFloor24AndChange', [[59, 'walk', false], [93, 'walk', true]]);
+    more('raiseFloorTurbo', [[130, 'walk', false], [129, 'walk', true], [131, 'use', false], [132, 'use', true]]);
+    more('raiseFloor512', [[140, 'use', false]]);
+    // ----- 그 밖의 리프트 -----
+    for (const [n, t, rep, amount] of [[15, 'use', false, 24], [66, 'use', true, 24], [14, 'use', false, 32], [67, 'use', true, 32]]) {
+      this.def(n, t, rep, (l) => this.doPlat(l, 'raiseAndChange', amount));
+    }
+    for (const [n, rep] of [[53, false], [87, true]]) this.def(n, 'walk', rep, (l) => this.doPlat(l, 'perpetual'));
+    for (const [n, rep] of [[54, false], [89, true]]) this.def(n, 'walk', rep, (l) => this.stopPlat(l));
+    // ----- 천장 · 크러셔 -----
+    const ceil = (type, list) => { for (const [n, t, rep] of list) this.def(n, t, rep, (l) => this.doCeiling(l, type)); };
+    ceil('lowerToFloor', [[41, 'use', false], [43, 'use', true]]);
+    ceil('raiseToHighest', [[40, 'walk', false]]);   // 원작은 바닥도 내리려 하지만 같은 섹터라 천장만 움직인다
+    ceil('lowerAndCrush', [[44, 'walk', false], [72, 'walk', true]]);
+    ceil('crushAndRaise', [[25, 'walk', false], [73, 'walk', true], [49, 'use', false]]);
+    ceil('fastCrushAndRaise', [[6, 'walk', false], [77, 'walk', true]]);
+    ceil('silentCrushAndRaise', [[141, 'walk', false]]);
+    for (const [n, rep] of [[57, false], [74, true]]) this.def(n, 'walk', rep, (l) => this.stopCeiling(l));
+    // ----- 열쇠가 있어야 여는 고속문 (스위치) -----
+    for (const [n, rep, key] of [[133, false, 'blue'], [99, true, 'blue'], [135, false, 'red'], [134, true, 'red'], [137, false, 'yellow'], [136, true, 'yellow']]) {
+      this.def(n, 'use', rep, (l) => this.lockedDoor(l, key));
+    }
+    // ----- 조명 -----
+    this.def(17, 'walk', false, (l) => { for (const s of this.sectorsWithTag(l.tag)) if (!s.specialData) g.add(new Strobe(g, s, 35, false)); return true; });
+    this.def(104, 'walk', false, (l) => { for (const s of this.sectorsWithTag(l.tag)) s.light = minSurroundingLight(s, s.light); return true; });
   }
 
   // ---------- 레벨 시작 시 ----------
@@ -354,6 +438,16 @@ export class Specials {
         case 12: g.add(new Strobe(g, sec, 35, true)); break;
         case 13: g.add(new Strobe(g, sec, 15, true)); break;
         case 17: g.add(new FireFlicker(g, sec)); break;
+        case 10: {   // 30초 뒤 닫히는 문
+          const d = g.add(new Door(g, sec, 'normal', 0, VDOORSPEED, sec.ceilingHeight));
+          d.countdown = 30 * 35; sec.special = 0;
+          break;
+        }
+        case 14: {   // 5분 뒤 열리는 문
+          const d = g.add(new Door(g, sec, 'raiseIn5Mins', 2, VDOORSPEED, lowestCeilingSurrounding(sec) - 4));
+          d.countdown = 5 * 60 * 35; sec.special = 0;
+          break;
+        }
       }
     }
     for (const ld of this.level.linedefs) if (ld.special === 48) g.add(new WallScroll(ld));
@@ -430,6 +524,8 @@ export class Specials {
   /** 총알이 맞으면 작동하는 선 (G1 열기 46 등). 특수 46: 문을 열어 둔다 */
   shootLine(ld, shooter) {
     if (ld.special === 46 && this.doDoor(ld, 'open')) this.swapSwitchTextures(ld); // 반복 작동(GR): 선은 그대로 둔다
+    else if (ld.special === 24 && this.doFloor(ld, 'raiseFloor')) { this.swapSwitchTextures(ld); ld.special = 0; }
+    else if (ld.special === 47 && this.doPlat(ld, 'raiseToNearestAndChange')) { this.swapSwitchTextures(ld); ld.special = 0; }
   }
 
   // ---------- 발동 ----------
@@ -497,14 +593,29 @@ export class Specials {
     return did;
   }
 
+  /** 열쇠 고속문 스위치 (99, 133~137): 열쇠가 없으면 메시지만 */
+  lockedDoor(ld, key) {
+    const g = this.game;
+    if (!g.player.keys[key]) { g.say(`You need a ${key} key to activate this object`); g.playSound('OOF'); return false; }
+    return this.doDoor(ld, 'blazeOpen');
+  }
+
   // ---------- 리프트 ----------
-  doPlat(ld, type) {
+  /** amount: raiseAndChange 에서 올라가는 높이 (24 / 32) */
+  doPlat(ld, type, amount = 0) {
     let did = false;
+    if (type === 'perpetual') did = this.activateStopped(ld.tag, Plat);   // 멈춰 둔 것이 있으면 다시 움직인다
     for (const sec of this.sectorsWithTag(ld.tag)) {
       if (sec.specialData) continue;
       did = true;
       let plat;
-      if (type === 'raiseToNearestAndChange') {
+      if (type === 'raiseAndChange') {
+        plat = new Plat(this.game, sec, type, PLATSPEED / 2, sec.floorHeight, sec.floorHeight + amount, 0, 'up');
+        sec.floorTex = ld.frontSector.floorTex; sec.floorFlat = null;
+      } else if (type === 'perpetual') {
+        const low = Math.min(lowestFloorSurrounding(sec), sec.floorHeight), high = Math.max(highestFloorSurrounding(sec), sec.floorHeight);
+        plat = new Plat(this.game, sec, type, PLATSPEED, low, high, PLATWAIT, this.game.rnd() & 1 ? 'down' : 'up');
+      } else if (type === 'raiseToNearestAndChange') {
         plat = new Plat(this.game, sec, type, PLATSPEED / 2, sec.floorHeight, nextHighestFloor(sec, sec.floorHeight), 0, 'up');
         sec.floorTex = ld.frontSector.floorTex; sec.floorFlat = null; // 바닥 무늬 교체
         sec.special = 0;
@@ -517,13 +628,60 @@ export class Specials {
     return did;
   }
 
+  /** 멈춤 선(54·89): 태그가 같은 영구 리프트를 그 자리에 세운다 */
+  stopPlat(ld) {
+    for (const t of this.game.thinkers) {
+      if (t instanceof Plat && t.sector.tag === ld.tag && t.status !== 'stasis') { t.oldStatus = t.status; t.status = 'stasis'; }
+    }
+    return true;
+  }
+
+  /** 멈춰 둔(stasis) 리프트·크러셔 중 태그가 같은 것을 다시 움직인다. 하나라도 있으면 true */
+  activateStopped(tag, Kind) {
+    let any = false;
+    for (const t of this.game.thinkers) {
+      if (!(t instanceof Kind) || t.tag !== tag && t.sector.tag !== tag) continue;
+      if (Kind === Plat && t.status === 'stasis') { t.status = t.oldStatus; any = true; }
+      if (Kind === Ceiling && t.direction === 0 && t.oldDirection) { t.direction = t.oldDirection; any = true; }
+    }
+    return any;
+  }
+
+  // ---------- 천장 · 크러셔 ----------
+  doCeiling(ld, type) {
+    const crusher = type === 'crushAndRaise' || type === 'fastCrushAndRaise' || type === 'silentCrushAndRaise';
+    let did = crusher && this.activateStopped(ld.tag, Ceiling);
+    for (const sec of this.sectorsWithTag(ld.tag)) {
+      if (sec.specialData) continue;
+      did = true;
+      const g = this.game, floor = sec.floorHeight;
+      let c;
+      if (type === 'raiseToHighest') c = new Ceiling(g, sec, type, 1, CEILSPEED, floor, highestCeilingSurrounding(sec), false);
+      else {
+        const bottom = type === 'lowerToFloor' ? floor : floor + 8;
+        c = new Ceiling(g, sec, type, -1, type === 'fastCrushAndRaise' ? CEILSPEED * 2 : CEILSPEED, bottom, sec.ceilingHeight, type !== 'lowerToFloor');
+      }
+      g.add(c);
+    }
+    return did;
+  }
+
+  /** 멈춤 선(57·74): 태그가 같은 크러셔를 그 자리에 세운다 */
+  stopCeiling(ld) {
+    let did = false;
+    for (const t of this.game.thinkers) {
+      if (t instanceof Ceiling && t.tag === ld.tag && t.direction !== 0) { t.oldDirection = t.direction; t.direction = 0; did = true; }
+    }
+    return did;
+  }
+
   // ---------- 바닥 ----------
   doFloor(ld, type) {
     let did = false;
     for (const sec of this.sectorsWithTag(ld.tag)) {
       if (sec.specialData) continue;
       did = true;
-      let dir = -1, speed = FLOORSPEED, dest = sec.floorHeight;
+      let dir = -1, speed = FLOORSPEED, dest = sec.floorHeight, change = null, crush = false;
       switch (type) {
         case 'lowerFloor': dest = highestFloorSurrounding(sec); break;
         case 'lowerFloorToLowest': dest = lowestFloorSurrounding(sec); break;
@@ -535,8 +693,26 @@ export class Specials {
           dir = 1; dest = Math.min(lowestCeilingSurrounding(sec), sec.ceilingHeight); break;
         case 'raiseFloorToNearest':
           dir = 1; dest = nextHighestFloor(sec, sec.floorHeight); break;
+        case 'raiseFloorTurbo':
+          dir = 1; speed = FLOORSPEED * 4; dest = nextHighestFloor(sec, sec.floorHeight); break;
+        case 'raiseFloorCrush':
+          dir = 1; crush = true; dest = Math.min(lowestCeilingSurrounding(sec), sec.ceilingHeight) - 8; break;
+        case 'raiseFloor24': dir = 1; dest = sec.floorHeight + 24; break;
+        case 'raiseFloor512': dir = 1; dest = sec.floorHeight + 512; break;
+        case 'raiseFloor24AndChange':   // 무늬·특수는 바로 선 앞쪽 섹터 것으로
+          dir = 1; dest = sec.floorHeight + 24;
+          sec.floorTex = ld.frontSector.floorTex; sec.floorFlat = null; sec.special = ld.frontSector.special;
+          break;
+        case 'raiseToTexture':
+          dir = 1; dest = sec.floorHeight + shortestLowerTexture(sec, this.level.textureHeights ?? new Map()); break;
+        case 'lowerAndChange': {   // 내려간 높이와 같은 이웃 바닥의 무늬·특수로 바뀐다
+          dest = lowestFloorSurrounding(sec);
+          const model = sec.lines.map((l) => nextSector(l, sec)).find((o) => o && o.floorHeight === dest);
+          change = { tex: model?.floorTex ?? sec.floorTex, special: model ? model.special : sec.special };
+          break;
+        }
       }
-      this.game.add(new FloorMover(this.game, sec, dir, speed, dest));
+      this.game.add(new FloorMover(this.game, sec, dir, speed, dest, change, crush));
     }
     return did;
   }

@@ -196,6 +196,25 @@ export function loadLevel(wad, mapName) {
     reject: raw.REJECT, blockmap: raw.BLOCKMAP,
     bounds: { minX, minY, maxX, maxY },
     playerStart: start,
+    textureHeights: textureHeights(wad),   // 벽 텍스처 높이 (바닥을 "아래 텍스처 높이만큼" 올리는 특수 30·96 이 쓴다)
   };
+}
+
+/** TEXTURE1/2 의 텍스처 이름 → 높이 (WAD 마다 한 번만 읽는다) */
+function textureHeights(wad) {
+  if (wad.textureHeights) return wad.textureHeights;
+  const map = new Map();
+  for (const name of ['TEXTURE1', 'TEXTURE2']) {
+    if (!wad.has(name)) continue;
+    const u8 = wad.getLump(name), d = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+    const n = d.getInt32(0, true);
+    for (let i = 0; i < n; i++) {
+      const off = d.getInt32(4 + i * 4, true);
+      const tex = String.fromCharCode(...u8.subarray(off, off + 8)).replace(/\0.*$/, '').toUpperCase();
+      map.set(tex, d.getInt16(off + 14, true));
+    }
+  }
+  wad.textureHeights = map;
+  return map;
 }
 

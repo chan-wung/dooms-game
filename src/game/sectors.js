@@ -34,6 +34,25 @@ export const lowestCeilingSurrounding = (sec) => {
   return h;
 };
 
+export const highestCeilingSurrounding = (sec) => {
+  let h = 0;
+  for (const l of sec.lines) { const o = nextSector(l, sec); if (o && o.ceilingHeight > h) h = o.ceilingHeight; }
+  return h;
+};
+
+/** 이 섹터 둘레의 양면선 아래 텍스처 중 가장 낮은 것의 높이 (원작 raiseToTexture) */
+export const shortestLowerTexture = (sec, heights) => {
+  let min = 32767;
+  for (const l of sec.lines) {
+    if (!l.backSector) continue;
+    for (const side of [l.right, l.left]) {
+      const h = side && side.lowerTex !== '-' ? heights.get(side.lowerTex) : undefined;
+      if (h && h < min) min = h;
+    }
+  }
+  return min;
+};
+
 /** 이웃 중 가장 어두운 조명 (max 이하) */
 export const minSurroundingLight = (sec, max) => {
   let m = max;

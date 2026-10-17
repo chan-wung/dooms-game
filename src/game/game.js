@@ -7,6 +7,7 @@ import { touchSpecial } from './items.js';
 import { countsKill } from './info.js';
 import { ACTIONS, moveMobj, nightmareRespawn } from './monsters.js';
 import { setupWeapons } from './weapons.js';
+import { damageMobj, spawnBlood } from './combat.js';
 import { sectorAt } from '../render/bsp.js';
 
 /** 아이템 줍는 소리: 무기 = WPNUP, 파워업·소울스피어 = GETPOW, 그 외 ITEMUP */
@@ -142,17 +143,36 @@ export class Game {
   say(text, force = false) { this.message = text; this.messageForce = force; this.messageTics = 3 * TICRATE; }
   exitLevel(secret) { if (!this.exited) this.exited = { secret, time: this.time }; }
 
-  /** 이 섹터가 움직여서 플레이어가 끼는가 (true = 끼어서 움직일 수 없음) */
-  changeSector(sec) {
-    const p = this.player;
-    if (!this.touches(p, sec)) return false;
-    const r = this.physics.check(p.x, p.y, p.z);
-    return r.ceilz - r.floorz < HEIGHT;
+  /**
+   * 이 섹터가 움직여서 플레이어나 몬스터가 끼는가 (true = 끼어서 움직일 수 없음, 원작 P_ChangeSector).
+   * crush 면 낀 것에 4 tic 마다 10 피해(피가 튄다), 낀 시체는 고깃덩이(POL5)가 된다.
+   */
+  changeSector(sec, crush = false) {
+    const p = this.player, hurt = crush && !(this.time & 3);
+    let nofit = false;
+    if (this.touches(p, sec)) {
+      const r = this.physics.check(p.x, p.y, p.z);
+      if (r.ceilz - r.floorz < HEIGHT) {
+        nofit = true;
+        if (hurt && !p.dead) { damageMobj(this, p, null, null, 10); spawnBlood(this, p.x, p.y, p.z + HEIGHT / 2, 10); }
+      }
+    }
+    for (const m of this.mobjs) {
+      if (!m.ai || m.removed || m.missile || m.ai.effect || !m.height || !this.touches(m, sec)) continue;
+      const r = this.physics.check(m.x, m.y, m.z, m.height, m.radius, { ignore: m, missile: true });
+      if (r.ceilz - r.floorz >= m.height) continue;
+      if (m.corpse) { Object.assign(m, { sprite: 'POL5', frame: 0, tics: -1, height: 0, radius: 0 }); continue; }
+      if (!m.shootable) continue;
+      nofit = true;
+      if (hurt) { damageMobj(this, m, null, null, 10); spawnBlood(this, m.x, m.y, m.z + m.height / 2, 10); }
+    }
+    return nofit;
   }
 
   touches(p, sec) {
     if (p.sector === sec) return true;
-    const l = p.x - RADIUS, r = p.x + RADIUS, b = p.y - RADIUS, t = p.y + RADIUS;
+    const rad = p.radius || RADIUS;
+    const l = p.x - rad, r = p.x + rad, b = p.y - rad, t = p.y + rad;
     for (const ld of sec.lines) {
       if (!(r <= ld.minX || l >= ld.maxX || t <= ld.minY || b >= ld.maxY)) return true;
     }
