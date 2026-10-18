@@ -354,7 +354,7 @@ const startWad = (buf, source, persist = false) => {
   const maps = wad.getMapNames();
   if (!maps.length) { $status.textContent = `${source}: 맵이 없는 WAD입니다.`; return; }
   if (persist) saveWad(buf, source);   // 다음에 다시 고르지 않아도 되게 브라우저에 보관
-  $drop.hidden = true;
+  $drop.hidden = true; $("wadList").hidden = true;
   $bar.hidden = $stage.hidden = $help.hidden = false;
   $mapSel.replaceChildren(new Option('맵 선택…', ''), ...maps.map((m) => new Option(m, m)));
   setMode(false);
@@ -364,22 +364,70 @@ const startWad = (buf, source, persist = false) => {
   updateMusic();
 };
 
-const fetchDefault = async () => {
+const WAD_PICK_KEY = 'doomjs.wad';        // 마지막으로 고른 public/wad 파일 이름
+const WAD_ASK_KEY = 'doomjs.wadAsk';      // "WAD 바꾸기" 직후 한 번은 무조건 고르게 한다
+const store = (fn) => { try { return fn(); } catch { return null; } };
+
+/** public/wad 의 WAD 목록 (개발 서버만 제공, 없으면 기본 DOOM1.WAD 만 시도) */
+const listServerWads = async () => {
   try {
-    const res = await fetch(WAD_URL);
-    const type = res.headers.get('content-type') || '';
-    // Vite dev 서버는 없는 파일에 index.html(SPA 폴백)을 돌려주므로 확인 필요
-    if (!res.ok || type.includes('text/html')) throw new Error('not found');
-    startWad(await res.arrayBuffer(), WAD_URL);
-  } catch {
-    const saved = await loadSavedWad();
-    if (saved) startWad(saved.buffer, `${saved.name} (이 브라우저에 저장됨)`);
-    else $status.textContent = '게임 데이터(DOOM1.WAD)가 필요합니다. 아래에 파일을 끌어다 놓거나 선택하세요. (파일은 이 브라우저에만 저장됩니다)';
+    const res = await fetch('/wad/index.json');
+    if (res.ok && !(res.headers.get('content-type') || '').includes('text/html')) {
+      const names = await res.json();
+      if (Array.isArray(names)) return names;
+    }
+  } catch { /* 목록 없음 */ }
+  return [WAD_URL.split('/').pop()];
+};
+
+const loadServerWad = async (name) => {
+  const url = `/wad/${encodeURIComponent(name)}`;
+  const res = await fetch(url);
+  const type = res.headers.get('content-type') || '';
+  // Vite dev 서버는 없는 파일에 index.html(SPA 폴백)을 돌려주므로 확인 필요
+  if (!res.ok || type.includes('text/html')) throw new Error('not found');
+  store(() => localStorage.setItem(WAD_PICK_KEY, name));
+  startWad(await res.arrayBuffer(), url);
+};
+
+const showWadPicker = (names) => {
+  const $list = $('wadList');
+  $list.replaceChildren(...names.map((name) => {
+    const b = document.createElement('button');
+    b.textContent = name;
+    b.addEventListener('click', () => { $list.hidden = true; $status.textContent = `${name} 불러오는 중…`; loadServerWad(name).catch(() => { $list.hidden = false; $status.textContent = `${name} 을(를) 불러오지 못했습니다.`; }); });
+    return b;
+  }));
+  $list.hidden = false;
+  $status.textContent = '플레이할 WAD 를 고르세요. (아래에서 직접 올릴 수도 있습니다)';
+};
+
+const fetchDefault = async () => {
+  const names = await listServerWads();
+  const ask = store(() => sessionStorage.getItem(WAD_ASK_KEY));
+  store(() => sessionStorage.removeItem(WAD_ASK_KEY));
+  const last = store(() => localStorage.getItem(WAD_PICK_KEY));
+  if (!ask) {
+    // 마지막으로 고른 파일 → 하나뿐이면 그 파일 → (없으면) 브라우저에 저장된 WAD
+    const auto = names.includes(last) ? last : (names.length === 1 ? names[0] : null);
+    if (auto) { try { await loadServerWad(auto); return; } catch { /* 아래로 */ } }
+    if (!auto) {
+      const saved = await loadSavedWad();
+      if (saved) { startWad(saved.buffer, `${saved.name} (이 브라우저에 저장됨)`); return; }
+    }
   }
+  const available = [];
+  for (const n of names) { try { const r = await fetch(`/wad/${encodeURIComponent(n)}`, { method: 'HEAD' }); if (r.ok && !(r.headers.get('content-type') || '').includes('text/html')) available.push(n); } catch { /* 건너뜀 */ } }
+  if (available.length) { showWadPicker(available); return; }
+  const saved = await loadSavedWad();
+  if (saved && !ask) startWad(saved.buffer, `${saved.name} (이 브라우저에 저장됨)`);
+  else $status.textContent = '게임 데이터(DOOM1.WAD)가 필요합니다. 아래에 파일을 끌어다 놓거나 선택하세요. (파일은 이 브라우저에만 저장됩니다)';
 };
 /** 저장해 둔 WAD 를 지우고 새로 시작한다 (파일 고르는 화면으로 돌아간다). 엔진 상태를 통째로 바꾸므로 새로고침이 가장 안전하다 */
 async function changeWad() {
   await clearSavedWad();
+  store(() => localStorage.removeItem(WAD_PICK_KEY));
+  store(() => sessionStorage.setItem(WAD_ASK_KEY, '1'));
   window.location.reload();
 }
 const loadFile = async (f) => { if (f) startWad(await f.arrayBuffer(), f.name, true); };
