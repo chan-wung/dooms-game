@@ -91,7 +91,7 @@ export class TouchControls {
       el.querySelectorAll('.t-opt').forEach((b) => {
         const [name, state] = LABELS[b.dataset.opt];
         b.textContent = `${t(name)} : ${state(o[b.dataset.opt])}`;
-        b.classList.toggle('on', o[b.dataset.opt]);
+        b.classList.toggle('on', !!o[b.dataset.opt]);   // 언어 버튼은 켜짐/꺼짐이 없어 항상 꺼진 모양
       });
       mute.textContent = o.muted ? 'MUTED' : 'SOUND';
       mute.classList.toggle('on', o.muted);

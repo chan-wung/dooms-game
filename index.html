@@ -78,10 +78,11 @@
   #touch .t-help b { color: var(--accent); font-weight: 400; font-size: 18px; margin-bottom: 4px; }
   #touch .t-help span { color: #ffd23c; }
   #touch .t-help-text { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-  #touch .t-opts { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-  #touch .t-opt { padding: 10px 16px; font: inherit; color: #fff; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.5); border-radius: 8px; }
+  #touch .t-opts { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 6px; }
+  #touch .t-opt { padding: 7px 14px; font: inherit; color: #fff; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.5); border-radius: 8px; }
   #touch .t-opt.on, #touch .t-mute.on { background: var(--accent); }
   #touch .t-help em { margin-top: 8px; color: var(--accent); font-style: normal; }
+  @media (max-height: 460px) { #touch .t-help { gap: 2px; padding: 6px; font-size: 13px; } #touch .t-help b { font-size: 15px; margin-bottom: 0; } #touch .t-help-text { gap: 2px; } #touch .t-opt { padding: 5px 10px; } #touch .t-help em { margin-top: 4px; } }
   #automap { touch-action: none; }
   /* 세로로 들고 있을 때: 가로로 돌리라는 안내 (게임은 멈춘다) */
   #rotate { display: none; position: fixed; inset: 0; z-index: 50; background: #000; flex-direction: column; align-items: center; justify-content: center;
