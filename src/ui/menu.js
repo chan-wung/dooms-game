@@ -206,7 +206,7 @@ export class Menu {
         const lines = this.confirm?.lines ?? [];
         L.title = (f) => {
           this.dim(f, 20, 56, 300, 150);
-          lines.forEach((line, i) => hud.text(f, line, 160 - hud.textWidth(line) / 2, 66 + 11 * i));
+          lines.forEach((line, i) => hud.text(f, line, 160 - hud.textWidth(line) / 2, 66 + 14 * i));
         };
         I.push({ id: 'yes', text: t('menu.yes'), x: 118, y: 124, h: 14, rx0: 96, rx1: 156, skullX: 94, act: () => { this.actions.play('PISTOL'); this.confirm.yes(); } });
         I.push({ id: 'no', text: t('menu.no'), x: 196, y: 124, h: 14, rx0: 176, rx1: 236, skullX: 172, act: () => this.back() });

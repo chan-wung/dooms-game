@@ -1,6 +1,6 @@
 import { Wad } from './wad/wad.js';
 import { t, setLang, getLang, LANGS } from './app/i18n.js';
-import { loadFont } from './ui/font.js';
+import { TextLayer, loadFont } from './ui/font.js';
 import { loadLevel } from './wad/level.js';
 import { saveWad, loadSavedWad, clearSavedWad } from './wad/store.js';
 import { Automap } from './ui/automap.js';
@@ -44,7 +44,7 @@ const TIC = 1 / TICRATE;
 // ---------- 설정 (브라우저에 기억) ----------
 const settings = loadSettings({ sfx: 12, music: 8, sens: 5, skill: 3, messages: 1, screenSize: 10, gamma: 0, lang: 'ko', muted: 0, autoLandscape: 0, musicOn: 0, sfxOn: 0 });   // 음악·효과음은 기본으로 꺼 둔다 (위쪽 체크로 켬)
 setLang(LANGS.includes(settings.lang) ? settings.lang : 'ko');
-const fontReady = loadFont();          // 한글 글꼴 (WAD 를 시작하기 전에 준비)
+loadFont();                           // 한글 글꼴 (불러오는 동안은 시스템 글꼴)
 $music.checked = !!settings.musicOn;
 $sfx.checked = !!settings.sfxOn;
 const saveSettings = () => storeSettings(settings);
@@ -56,7 +56,7 @@ let showAutomap = false;
 let acc = 0;
 const automap = new Automap($canvas);
 window.automap = automap; // 콘솔 디버깅용
-let gfxRef = null, renderer = null, screen = null, hud = null, menu = null, sound = null, music = null, touch = null, inter = null, finale = null;
+let gfxRef = null, renderer = null, screen = null, textLayer = null, hud = null, menu = null, sound = null, music = null, touch = null, inter = null, finale = null;
 const screenBuf = new Uint32Array(SCREEN_W * SCREEN_H);  // 화면 버퍼 (3D 뷰 + 상태바 + 메뉴)
 const input = new Input();
 const keys = input.keys;
@@ -142,6 +142,8 @@ const present = (dt) => {
     if (wipe.done) wiping = false;
   }
   screen.present();
+  const texts = hud.takeTexts();
+  textLayer.render(wiping ? [] : texts);     // 한글 문구는 녹는 전환이 끝난 뒤에 겹쳐 그린다
 };
 
 // ---------- 저장 (맵을 시작할 때 슬롯 0 에 자동 저장: 그 맵을 이어받은 상태로 처음부터) ----------
@@ -344,6 +346,7 @@ const startWad = (buf, source, persist = false) => {
     gfxRef = gfx;
     renderer = new Renderer(gfx, screenBuf);
     screen = new Screen($view, screenBuf);
+    textLayer ??= new TextLayer($view);
     hud = new Hud(gfx, wad);
     sound = new SoundSystem(wad);
     sound.sfxOn = !!settings.sfxOn;
@@ -413,7 +416,6 @@ const showWadPicker = (names) => {
 };
 
 const fetchDefault = async () => {
-  await fontReady;
   const names = await listServerWads();
   const ask = store(() => sessionStorage.getItem(WAD_ASK_KEY));
   store(() => sessionStorage.removeItem(WAD_ASK_KEY));
@@ -441,7 +443,7 @@ async function changeWad() {
   store(() => sessionStorage.setItem(WAD_ASK_KEY, '1'));
   window.location.reload();
 }
-const loadFile = async (f) => { if (f) { const buf = await f.arrayBuffer(); await fontReady; startWad(buf, f.name, true); } };
+const loadFile = async (f) => { if (f) startWad(await f.arrayBuffer(), f.name, true); };
 $file.addEventListener('change', () => loadFile($file.files[0]));
 $drop.addEventListener('dragover', (e) => { e.preventDefault(); $drop.classList.add('over'); });
 $drop.addEventListener('dragleave', () => $drop.classList.remove('over'));
@@ -749,6 +751,7 @@ const frame = (now) => {
         resizeAutomap();
         automap.tick();
         automap.draw();
+        textLayer.render([]);
       } else {
         const view = p.view(acc / TIC);
         setTint(tintPalette(p));

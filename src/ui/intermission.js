@@ -392,7 +392,7 @@ export class Finale {
     let left = Math.max(0, Math.floor((this.count - 10) / TEXT_SPEED));
     endText(this.end).forEach((line, i) => {
       if (left <= 0) return;
-      h.text(frame, line.slice(0, left), 10, 10 + 11 * i);
+      h.text(frame, line.slice(0, left), 10, 10 + 11 * i, true);
       left -= line.length + 1;
     });
   }

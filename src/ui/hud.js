@@ -1,7 +1,7 @@
 import { SCREEN_W as W, SCREEN_H, VIEW_H, pspriteColormap, viewWindow } from '../render/renderer.js';
 import { WEAPONS } from '../game/weapons.js';
 import { normAngle } from '../game/util.js';
-import { needsGlyph, glyphRun } from './font.js';
+import { needsGlyph, measure, TEXT_SIZE, SMALL_SIZE } from './font.js';
 
 /**
  * 화면 아래 상태바(체력·방어구·탄약·무기 칸·열쇠·얼굴)와 손에 든 무기 스프라이트.
@@ -20,6 +20,7 @@ export class Hud {
     this.textures = gfx.textures;
     this.lit = gfx.palette.lit;
     this.cache = new Map();
+    this.texts = [];                     // 한글 문구 (font.js)
   }
 
   setPalette(n) { this.lit = this.palette.litFor(n); }
@@ -59,8 +60,12 @@ export class Hud {
   }
 
   /** 원작 글꼴(STCFN)로 글자 쓰기. 대문자만 지원, 소문자는 대문자로 바꿔 그린다. 한글 등은 갈무리 글꼴로 그린다 */
-  text(frame, str, x, y) {
-    if (needsGlyph(str)) { const run = glyphRun(str); if (run) return this.glyphText(frame, run, x, y); }
+  text(frame, str, x, y, small = false) {
+    if (needsGlyph(str)) {                       // 한글 등은 버퍼에 찍지 않고 겹침 캔버스(TextLayer)가 그린다
+      const size = small ? SMALL_SIZE : TEXT_SIZE;
+      this.texts.push({ str, x, y, size });
+      return x + measure(str, size);
+    }
     let cx = x;
     for (const ch of str.toUpperCase()) {
       const code = ch.charCodeAt(0);
@@ -71,8 +76,8 @@ export class Hud {
   }
 
   /** 글자 폭 (가운데 정렬용) */
-  textWidth(str) {
-    if (needsGlyph(str)) { const run = glyphRun(str); if (run) return run.width + 1; }
+  textWidth(str, small = false) {
+    if (needsGlyph(str)) return measure(str, small ? SMALL_SIZE : TEXT_SIZE);
     let w = 0;
     for (const ch of str.toUpperCase()) {
       const code = ch.charCodeAt(0);
@@ -82,37 +87,8 @@ export class Hud {
     return w;
   }
 
-  /** 한글 글자색: 원작 글꼴(STCFN 'A')에 쓰인 색 중 가장 밝은 색 (어두운 배경에서도 읽히게) */
-  fontColor() {
-    if (this.fontIdx === undefined) {
-      const tex = this.patch('STCFN065'), table = this.lit[0];
-      const luma = (i) => { const v = table[i]; return (v & 255) + ((v >> 8) & 255) + ((v >> 16) & 255); };
-      let best = 4;
-      if (tex) { let top = -1; for (let i = 0; i < tex.data.length; i++) if (tex.mask[i] && luma(tex.data[i]) > top) { top = luma(tex.data[i]); best = tex.data[i]; } }
-      this.fontIdx = best;
-    }
-    return this.fontIdx;
-  }
-
-  /** 한글 글자 마스크를 찍는다 (1px 그림자 포함). 다음 글자 x 를 돌려준다 */
-  glyphText(frame, run, x, y) {
-    x = Math.round(x); y = Math.round(y);             // 가운데 정렬 등으로 소수가 올 수 있다
-    const table = this.lit[0], fg = table[this.fontColor()], bg = table[0];
-    const { width: w, height: h, mask } = run;
-    const plot = (ox, oy, color) => {
-      for (let r = 0; r < h; r++) {
-        const sy = y + oy + r;
-        if (sy < 0 || sy >= SCREEN_H) continue;
-        for (let c = 0; c < w; c++) {
-          const sx = x + ox + c;
-          if (sx >= 0 && sx < W && mask[r * w + c]) frame[sy * W + sx] = color;
-        }
-      }
-    };
-    plot(1, 1, bg);
-    plot(0, 0, fg);
-    return x + w + 1;
-  }
+  /** 이번 프레임에 모인 한글 문구를 꺼낸다 (TextLayer 가 그린다) */
+  takeTexts() { const t = this.texts; this.texts = []; return t; }
 
   // ---------- 손에 든 무기 ----------
   /** win: 3D 뷰 창 ({x, y, w, h}). 창이 좁으면 무기 그림도 같은 비율로 줄어든다 (원작 pspritescale) */
