@@ -1,4 +1,6 @@
 import { Wad } from './wad/wad.js';
+import { t, setLang, getLang, LANGS } from './app/i18n.js';
+import { loadFont } from './ui/font.js';
 import { loadLevel } from './wad/level.js';
 import { saveWad, loadSavedWad, clearSavedWad } from './wad/store.js';
 import { Automap } from './ui/automap.js';
@@ -30,12 +32,19 @@ const $view = $('view'), $canvas = $('automap'), $mapSel = $('mapSel'), $mapOpts
 const $follow = $('optFollow'), $flat = $('optFlat'), $things = $('optThings'), $mode = $('btnMode');
 const $sfx = $('optSfx'), $music = $('optMusic');
 const $msg = $('msg'), $overlay = $('overlay');
+const $lang = $('langSel');
+
+// 상태 줄: 언어를 바꿔도 같은 문구가 다시 번역되도록 키와 변수를 기억한다
+let statusKey = null, statusVars = null;
+const setStatus = (key, vars) => { statusKey = key; statusVars = vars; $status.textContent = t(key, vars); };
 
 const WAD_URL = '/wad/DOOM1.WAD';
 const TIC = 1 / TICRATE;
 
 // ---------- 설정 (브라우저에 기억) ----------
-const settings = loadSettings({ sfx: 12, music: 8, sens: 5, skill: 3, messages: 1, screenSize: 10, gamma: 0, muted: 0, autoLandscape: 0, musicOn: 0, sfxOn: 0 });   // 음악·효과음은 기본으로 꺼 둔다 (위쪽 체크로 켬)
+const settings = loadSettings({ sfx: 12, music: 8, sens: 5, skill: 3, messages: 1, screenSize: 10, gamma: 0, lang: 'ko', muted: 0, autoLandscape: 0, musicOn: 0, sfxOn: 0 });   // 음악·효과음은 기본으로 꺼 둔다 (위쪽 체크로 켬)
+setLang(LANGS.includes(settings.lang) ? settings.lang : 'ko');
+const fontReady = loadFont();          // 한글 글꼴 (WAD 를 시작하기 전에 준비)
 $music.checked = !!settings.musicOn;
 $sfx.checked = !!settings.sfxOn;
 const saveSettings = () => storeSettings(settings);
@@ -66,7 +75,7 @@ const setMode = (automapOn) => {
   $view.hidden = automapOn;
   $canvas.hidden = !automapOn;
   $mapOpts.hidden = !automapOn;
-  $mode.textContent = automapOn ? '3D 화면 (Tab)' : '오토맵 (Tab)';
+  $mode.textContent = t(automapOn ? 'ui.view3d' : 'ui.automap');
   touch?.setAutomap(automapOn);
   if (automapOn) { skipUnlockPause = true; document.exitPointerLock?.(); resizeAutomap(); }
 };
@@ -163,14 +172,15 @@ const openMap = (name, carry = null, saved = null) => {
     $mapSel.value = name;
     $overlay.hidden = true;
     acc = 0;
-    $status.textContent =
-      `${name} — 난이도 ${settings.skill} · 정점 ${level.vertexes.length} · 선 ${level.linedefs.length} · 섹터 ${level.sectors.length} · ` +
-      `things ${level.things.length} (표시 ${game.mobjs.length}) · segs ${level.segs.length} · 서브섹터 ${level.subsectors.length} · 노드 ${level.nodes.length}`;
+    setStatus('ui.mapInfo', {
+      name, skill: settings.skill, vertexes: level.vertexes.length, lines: level.linedefs.length, sectors: level.sectors.length,
+      things: level.things.length, shown: game.mobjs.length, segs: level.segs.length, subsectors: level.subsectors.length, nodes: level.nodes.length,
+    });
     if (game.unknownThings.size) console.warn('아직 모르는 thing 종류:', Object.fromEntries(game.unknownThings));
     updateMusic();
     touch?.showHelpOnce();
   } catch (err) {
-    $status.textContent = `${name} 로드 실패: ${err.message}`;
+    setStatus('ui.wadLoadFail', { name, err: err.message });
     console.error(err);
   }
 };
@@ -218,14 +228,14 @@ const runCheat = (name, arg) => {
     case 'power': togglePower(game, arg); break;
     case 'chainsaw': giveChainsaw(game); break;
     case 'pos': showPosition(game); break;
-    case 'beholdHelp': game.say('inVuln, Str, Inviso, Rad, Allmap, or Light-amp', true); break;
+    case 'beholdHelp': game.say(t('cheat.beholdHelp'), true); break;
     case 'map':
       setAutomapMode((automapMode + 1) % 3);
-      game.say(['Automap: normal', 'Automap: all lines', 'Automap: all lines and things'][automapMode], true);
+      game.say(t(`cheat.automap${automapMode}`), true);
       break;
     case 'warp':
       if (!wad.has(arg)) arg = arg.replace(/^E(\d)M(\d)$/, 'MAP$1$2');   // 둠2: IDCLEV07 → MAP07
-      if (wad.has(arg)) { menu.close(); openMap(arg, game.player.exportState()); game.say('Changing Level...', true); lockPointer(); }
+      if (wad.has(arg)) { menu.close(); openMap(arg, game.player.exportState()); game.say(t('cheat.warp'), true); lockPointer(); }
       break;
     default: return false;
   }
@@ -248,9 +258,9 @@ const fullSave = (name) => ({ v: 2, kind: 'full', map: mapName, skill: game.skil
 /** 지금 상태를 슬롯 n 에 저장 */
 const saveSlot = (n) => {
   if (!canSave()) return false;
-  if (!writeSlot(n, fullSave(slotName(mapName)))) { game.say('SAVE FAILED', true); return false; }
+  if (!writeSlot(n, fullSave(slotName(mapName)))) { game.say(t('game.saveFailed'), true); return false; }
   setLastSlot(n);
-  menu.close(); game.say('GAME SAVED.', true); lockPointer();
+  menu.close(); game.say(t('game.saved'), true); lockPointer();
   return true;
 };
 
@@ -262,13 +272,13 @@ const autoSaveOnLeave = () => {
 // ---------- 원작 F키 단축키 ----------
 /** 메뉴가 닫혀 있으면 열고 fn 실행 (게임 중이면 일시정지 메뉴가 열린다) */
 const withMenu = (fn) => { if (!menu) return; if (!menu.open) openMenu(); fn(); };
-const gammaText = () => (settings.gamma ? `Gamma correction level ${settings.gamma}` : 'Gamma correction OFF');
+const gammaText = () => (settings.gamma ? t('game.gamma', { n: settings.gamma }) : t('game.gammaOff'));
 const refuse = () => sound?.play('OOF');
 
 const toggleMessages = () => {
   settings.messages = settings.messages ? 0 : 1;
   applySettings();
-  game?.say(settings.messages ? 'Messages ON' : 'Messages OFF', true);
+  game?.say(t(settings.messages ? 'game.messagesOn' : 'game.messagesOff'), true);
 };
 const cycleGamma = () => {
   settings.gamma = (settings.gamma + 1) % GAMMA_LEVELS;
@@ -292,10 +302,10 @@ const FUNCTION_KEYS = {
   F3: () => withMenu(() => menu.show('load')),
   F4: () => withMenu(() => menu.show('sound')),
   F7: () => (appState === 'play' && game
-    ? withMenu(() => menu.ask(['ARE YOU SURE YOU WANT TO', 'END THE GAME?'], quitToTitle, 'close')) : refuse()),
+    ? withMenu(() => menu.ask(t('ask.endGame'), quitToTitle, 'close')) : refuse()),
   F8: () => (appState === 'play' ? toggleMessages() : refuse()),
   F10: () => (appState === 'play' && game
-    ? withMenu(() => menu.ask(['QUIT TO THE TITLE SCREEN?', 'UNSAVED PROGRESS WILL BE LOST.'], quitToTitle, 'close')) : refuse()),
+    ? withMenu(() => menu.ask(t('ask.quitTitle'), quitToTitle, 'close')) : refuse()),
   F11: cycleGamma,
 };
 
@@ -346,13 +356,13 @@ const startWad = (buf, source, persist = false) => {
     window.gfx = gfx; window.sound = sound; window.music = music; window.menu = menu; window.settings = settings;
   } catch (err) {
     wad = null;
-    $status.textContent = `WAD 로딩 실패: ${err.message}`;
+    setStatus('ui.wadLoadFailShort', { err: err.message });
     console.error(err);
     return;
   }
   window.wad = wad;
   const maps = wad.getMapNames();
-  if (!maps.length) { $status.textContent = `${source}: 맵이 없는 WAD입니다.`; return; }
+  if (!maps.length) { setStatus('ui.wadNoMaps', { source }); return; }
   if (persist) saveWad(buf, source);   // 다음에 다시 고르지 않아도 되게 브라우저에 보관
   $drop.hidden = true; $("wadList").hidden = true;
   $bar.hidden = $stage.hidden = $help.hidden = false;
@@ -360,7 +370,7 @@ const startWad = (buf, source, persist = false) => {
   setMode(false);
   appState = 'title';
   menu.show('title');
-  $status.textContent = `${source} 로드 완료 — 아무 키나 눌러 시작하세요.`;
+  setStatus('ui.wadLoaded', { source });
   updateMusic();
 };
 
@@ -395,14 +405,15 @@ const showWadPicker = (names) => {
   $list.replaceChildren(...names.map((name) => {
     const b = document.createElement('button');
     b.textContent = name;
-    b.addEventListener('click', () => { $list.hidden = true; $status.textContent = `${name} 불러오는 중…`; loadServerWad(name).catch(() => { $list.hidden = false; $status.textContent = `${name} 을(를) 불러오지 못했습니다.`; }); });
+    b.addEventListener('click', () => { $list.hidden = true; setStatus('ui.wadLoading', { name }); loadServerWad(name).catch(() => { $list.hidden = false; setStatus('ui.wadFailed', { name }); }); });
     return b;
   }));
   $list.hidden = false;
-  $status.textContent = '플레이할 WAD 를 고르세요. (아래에서 직접 올릴 수도 있습니다)';
+  setStatus('ui.wadPick');
 };
 
 const fetchDefault = async () => {
+  await fontReady;
   const names = await listServerWads();
   const ask = store(() => sessionStorage.getItem(WAD_ASK_KEY));
   store(() => sessionStorage.removeItem(WAD_ASK_KEY));
@@ -413,15 +424,15 @@ const fetchDefault = async () => {
     if (auto) { try { await loadServerWad(auto); return; } catch { /* 아래로 */ } }
     if (!auto) {
       const saved = await loadSavedWad();
-      if (saved) { startWad(saved.buffer, `${saved.name} (이 브라우저에 저장됨)`); return; }
+      if (saved) { startWad(saved.buffer, t('ui.wadSaved', { name: saved.name })); return; }
     }
   }
   const available = [];
   for (const n of names) { try { const r = await fetch(`/wad/${encodeURIComponent(n)}`, { method: 'HEAD' }); if (r.ok && !(r.headers.get('content-type') || '').includes('text/html')) available.push(n); } catch { /* 건너뜀 */ } }
   if (available.length) { showWadPicker(available); return; }
   const saved = await loadSavedWad();
-  if (saved && !ask) startWad(saved.buffer, `${saved.name} (이 브라우저에 저장됨)`);
-  else $status.textContent = '게임 데이터(DOOM1.WAD)가 필요합니다. 아래에 파일을 끌어다 놓거나 선택하세요. (파일은 이 브라우저에만 저장됩니다)';
+  if (saved && !ask) startWad(saved.buffer, t('ui.wadSaved', { name: saved.name }));
+  else setStatus('ui.wadNeeded');
 };
 /** 저장해 둔 WAD 를 지우고 새로 시작한다 (파일 고르는 화면으로 돌아간다). 엔진 상태를 통째로 바꾸므로 새로고침이 가장 안전하다 */
 async function changeWad() {
@@ -430,11 +441,32 @@ async function changeWad() {
   store(() => sessionStorage.setItem(WAD_ASK_KEY, '1'));
   window.location.reload();
 }
-const loadFile = async (f) => { if (f) startWad(await f.arrayBuffer(), f.name, true); };
+const loadFile = async (f) => { if (f) { const buf = await f.arrayBuffer(); await fontReady; startWad(buf, f.name, true); } };
 $file.addEventListener('change', () => loadFile($file.files[0]));
 $drop.addEventListener('dragover', (e) => { e.preventDefault(); $drop.classList.add('over'); });
 $drop.addEventListener('dragleave', () => $drop.classList.remove('over'));
 $drop.addEventListener('drop', (e) => { e.preventDefault(); $drop.classList.remove('over'); loadFile(e.dataTransfer.files[0]); });
+
+// ---------- 언어 ----------
+/** 페이지의 data-i18n(글자) · data-i18n-html(서식 있는 글) 요소와 동적 문구를 현재 언어로 */
+const applyDomLang = () => {
+  document.documentElement.lang = getLang();
+  document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-html]').forEach((el) => { el.innerHTML = t(el.dataset.i18nHtml); });
+  $mode.textContent = t(showAutomap ? 'ui.view3d' : 'ui.automap');
+  if (statusKey) $status.textContent = t(statusKey, statusVars);
+  $lang.value = getLang();
+  touch?.relabel();
+};
+const changeLang = (lang) => {
+  setLang(lang);
+  settings.lang = getLang();
+  saveSettings();
+  applyDomLang();
+  if (menu?.open) menu.show(menu.state, menu.cursor);     // 열려 있는 메뉴도 새 언어로 다시 그린다
+};
+$lang.addEventListener('change', () => { $lang.blur(); changeLang($lang.value); });
+applyDomLang();
 
 // ---------- UI 이벤트 ----------
 $mapSel.addEventListener('change', () => {
@@ -582,7 +614,7 @@ $canvas.addEventListener('wheel', (e) => {
 
 $('btnWad').addEventListener('click', () => {
   $('btnWad').blur();
-  if (appState === 'play' && game) withMenu(() => menu.ask(['CHANGE THE WAD FILE?', 'UNSAVED PROGRESS WILL BE LOST.'], changeWad, 'close'));
+  if (appState === 'play' && game) withMenu(() => menu.ask(t('ask.changeWad'), changeWad, 'close'));
   else changeWad();
 });
 
@@ -608,6 +640,7 @@ if (isTouchDevice()) {
     fullscreen: goLandscape,
     getOpts: () => ({ muted: !!settings.muted, autoLandscape: !!settings.autoLandscape }),
     setOpt: (key, value) => { settings[key] = value ? 1 : 0; if (key === 'muted') startAudio(); applySettings(); },
+    toggleLang: () => changeLang(getLang() === 'ko' ? 'en' : 'ko'),
     onHelpClosed: () => { startAudio(); if (settings.autoLandscape) goLandscape(); },
   });
   $stage.classList.add('is-touch');
@@ -679,7 +712,7 @@ const updateOverlay = () => {
   if (menu.open) { $overlay.hidden = true; return; }
   if (p.dead) {
     $overlay.hidden = false;
-    $overlay.innerHTML = `<b>YOU DIED</b><br><br><span>${touch ? '화면 탭 또는 USE' : 'R 또는 E(USE)'}: 다시 시작</span>`;
+    $overlay.innerHTML = `<b>${t('ui.died')}</b><br><br><span>${t(touch ? 'ui.restartTouch' : 'ui.restartKeys')}: ${t('ui.restart')}</span>`;
     if (!endShownAt) endShownAt = performance.now();
   } else {
     $overlay.hidden = true;

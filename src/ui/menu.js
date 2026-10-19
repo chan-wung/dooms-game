@@ -6,11 +6,10 @@
  *   항목 = { id, patch | text, x, y, h, act(), adjust(dir), therm: { get, set, max }, ... }
  * 모든 하위 메뉴에는 왼쪽 위에 BACK 버튼이 있다 (Esc 와 같음 — 터치에는 Esc 가 없다).
  */
+import { t } from '../app/i18n.js';
+
 const SKILLS = ['M_JKILL', 'M_ROUGH', 'M_HURT', 'M_ULTRA', 'M_NMARE'];
-const POWERS = [
-  { id: 'invuln', label: 'INVULNERABILITY' }, { id: 'berserk', label: 'BERSERK' }, { id: 'invis', label: 'INVISIBILITY' },
-  { id: 'radsuit', label: 'RADIATION SUIT' }, { id: 'automap', label: 'COMPUTER MAP' }, { id: 'lightamp', label: 'LIGHT AMP' },
-];
+const POWERS = ['invuln', 'berserk', 'invis', 'radsuit', 'automap', 'lightamp'].map((id) => ({ id, get label() { return t(`menu.power.${id}`); } }));
 // 저장/불러오기 목록: 슬롯 0 = 자동 저장(불러오기에만), 1~ = 수동 저장 (원작 LoadDef: x=80, y=54, 줄 간격 16)
 const SLOT_X = 80, SLOT_Y = 54, SLOT_H = 16, SLOT_CELLS = 24;
 const LOAD_SLOTS = [0, 1, 2, 3, 4, 5], SAVE_SLOTS = [1, 2, 3, 4, 5];
@@ -89,8 +88,8 @@ export class Menu {
       case 'main': {
         L.back = false; L.skullX = 65;
         L.title = (f) => hud.blit(f, hud.patch('M_DOOM'), 94, 2);
-        if (a.hasGame()) I.push({ id: 'resume', text: 'RESUME', act: () => { a.play('PISTOL'); this.resume(); } });
-        else if (a.hasAuto?.()) I.push({ id: 'continue', text: 'CONTINUE', act: () => { if (a.loadSlot(0)) a.play('PISTOL'); else a.play('OOF'); } });
+        if (a.hasGame()) I.push({ id: 'resume', text: t('menu.resume'), act: () => { a.play('PISTOL'); this.resume(); } });
+        else if (a.hasAuto?.()) I.push({ id: 'continue', text: t('menu.continue'), act: () => { if (a.loadSlot(0)) a.play('PISTOL'); else a.play('OOF'); } });
         I.push({ id: 'new', patch: 'M_NGAME', act: () => {
           a.play('PISTOL');
           this.episode = null;
@@ -102,7 +101,7 @@ export class Menu {
         I.push({ id: 'help', patch: 'M_RDTHIS', act: () => { a.play('PISTOL'); this.help('main'); } });
         I.push({ id: 'quit', patch: 'M_QUITG', act: () => {
           a.play('PISTOL');
-          if (a.hasGame()) this.ask(['QUIT TO THE TITLE SCREEN?', 'UNSAVED PROGRESS WILL BE LOST.'], () => a.quitToTitle(), ['main', 'quit']);
+          if (a.hasGame()) this.ask(t('ask.quitTitle'), () => a.quitToTitle(), ['main', 'quit']);
           else this.show('title');
         } });
         I.forEach((it, i) => Object.assign(it, { x: 97, y: 56 + 16 * i, h: 16, rx0: 80, rx1: 250 }));
@@ -124,7 +123,7 @@ export class Menu {
           id: `skill${i}`, patch, x: 48, y: 63 + 16 * i, h: 16, rx0: 40, rx1: 270,
           act: () => {
             a.play('PISTOL');
-            if (a.hasGame()) this.ask(['START A NEW GAME?', 'YOUR CURRENT PROGRESS WILL BE LOST.'], () => a.newGame(i + 1, this.episode), ['skill', i]);
+            if (a.hasGame()) this.ask(t('ask.newGame'), () => a.newGame(i + 1, this.episode), ['skill', i]);
             else a.newGame(i + 1, this.episode);
           },
         }));
@@ -140,7 +139,7 @@ export class Menu {
         I.push({ id: 'end', patch: 'M_ENDGAM', x: 60, y: 37, h: 16, act: () => {
           if (!a.hasGame()) { a.play('OOF'); return; }
           a.play('PISTOL');
-          this.ask(['ARE YOU SURE YOU WANT TO', 'END THE GAME?'], () => a.quitToTitle(), ['options', 'end']);
+          this.ask(t('ask.endGame'), () => a.quitToTitle(), ['options', 'end']);
         } });
         const toggleMsg = () => set('messages', s.messages ? 0 : 1, 0, 1);
         I.push({ id: 'msg', patch: 'M_MESSG', x: 60, y: 53, h: 16, extra: [s.messages ? 'M_MSGON' : 'M_MSGOFF', 180], adjust: toggleMsg, act: toggleMsg });
@@ -148,14 +147,14 @@ export class Menu {
         I.push({ id: 'sens', patch: 'M_MSENS', x: 60, y: 101, h: 32, therm: { get: () => s.sens, set: (v) => set('sens', v, 0, 9), max: 9 } });
         I.push({ id: 'sound', patch: 'M_SVOL', x: 60, y: 133, h: 16, act: () => { a.play('PISTOL'); this.show('sound'); } });
         const gamma = (d) => set('gamma', (s.gamma + d + 5) % 5, 0, 4);
-        I.push({ id: 'bright', text: `BRIGHTNESS  < ${s.gamma} >`, x: 64, y: 150, h: 10, adjust: gamma, act: () => gamma(1) });
-        I.push({ id: 'cheats', text: 'CHEATS', x: 64, y: 160, h: 10, act: () => { a.play('PISTOL'); this.show('cheats'); } });
+        I.push({ id: 'bright', text: t('menu.brightness', { n: s.gamma }), x: 64, y: 150, h: 10, adjust: gamma, act: () => gamma(1) });
+        I.push({ id: 'cheats', text: t('menu.cheats'), x: 64, y: 160, h: 10, act: () => { a.play('PISTOL'); this.show('cheats'); } });
         const cycleMap = (d) => { const n = maps.length; if (n) { this.mapIdx = (this.mapIdx + d + n) % n; a.play('STNMOV'); } };
-        I.push({ id: 'map', text: `MAP  < ${maps[this.mapIdx] ?? '-'} >`, x: 64, y: 170, h: 10, adjust: cycleMap, act: () => cycleMap(1) });
-        I.push({ id: 'warp', text: 'START MAP', x: 64, y: 180, h: 10, act: () => this.warpToMap() });
-        I.push({ id: 'wad', text: 'CHANGE WAD FILE', x: 64, y: 190, h: 10, act: () => {
+        I.push({ id: 'map', text: t('menu.map', { name: maps[this.mapIdx] ?? '-' }), x: 64, y: 170, h: 10, adjust: cycleMap, act: () => cycleMap(1) });
+        I.push({ id: 'warp', text: t('menu.startMap'), x: 64, y: 180, h: 10, act: () => this.warpToMap() });
+        I.push({ id: 'wad', text: t('menu.changeWad'), x: 64, y: 190, h: 10, act: () => {
           a.play('PISTOL');
-          this.ask(['CHANGE THE WAD FILE?', 'UNSAVED PROGRESS WILL BE LOST.'], () => a.changeWad(), ['options', 'wad']);
+          this.ask(t('ask.changeWad'), () => a.changeWad(), ['options', 'wad']);
         } });
         I.forEach((it) => Object.assign(it, { rx0: 56, rx1: 270 }));
         break;
@@ -170,18 +169,18 @@ export class Menu {
       }
       case 'cheats': {
         L.skullX = 28;
-        L.title = (f) => { this.dim(f, 50, 14, 270, 150); this.hud.text(f, 'CHEATS', 160 - hud.textWidth('CHEATS') / 2, 20); };
+        L.title = (f) => { this.dim(f, 50, 14, 270, 150); const title = t('menu.cheats'); this.hud.text(f, title, 160 - hud.textWidth(title) / 2, 20); };
         const c = a.cheatInfo?.() ?? {};
-        const onOff = (b) => (b ? 'ON' : 'OFF');
+        const onOff = (b) => t(b ? 'menu.on' : 'menu.off');
         const cheat = (name, arg) => () => { if (!a.hasGame()) { a.play('OOF'); return; } a.cheat(name, arg); a.play('SWTCHN'); };
         const power = (d) => { this.power = (this.power + d + POWERS.length) % POWERS.length; a.play('STNMOV'); };
-        I.push({ id: 'god', text: `GOD MODE  ${onOff(c.god)}`, act: cheat('god') });
-        I.push({ id: 'noclip', text: `NO CLIPPING  ${onOff(c.noclip)}`, act: cheat('noclip') });
-        I.push({ id: 'kfa', text: 'ALL WEAPONS, AMMO, KEYS', act: cheat('kfa') });
-        I.push({ id: 'fa', text: 'ALL WEAPONS, AMMO (NO KEYS)', act: cheat('fa') });
-        I.push({ id: 'map', text: `AUTOMAP  ${['OFF', 'ALL LINES', 'LINES + THINGS'][c.automap ?? 0]}`, act: cheat('map') });
-        I.push({ id: 'power', text: `POWER-UP  < ${POWERS[this.power].label} >`, adjust: power, act: () => power(1) });
-        I.push({ id: 'give', text: 'GIVE THE POWER-UP', act: cheat('power', POWERS[this.power].id) });
+        I.push({ id: 'god', text: t('menu.god', { state: onOff(c.god) }), act: cheat('god') });
+        I.push({ id: 'noclip', text: t('menu.noclip', { state: onOff(c.noclip) }), act: cheat('noclip') });
+        I.push({ id: 'kfa', text: t('menu.kfa'), act: cheat('kfa') });
+        I.push({ id: 'fa', text: t('menu.fa'), act: cheat('fa') });
+        I.push({ id: 'map', text: t('menu.automap', { state: t(`menu.automap${c.automap ?? 0}`) }), act: cheat('map') });
+        I.push({ id: 'power', text: t('menu.power', { name: POWERS[this.power].label }), adjust: power, act: () => power(1) });
+        I.push({ id: 'give', text: t('menu.give'), act: cheat('power', POWERS[this.power].id) });
         I.forEach((it, i) => Object.assign(it, { x: 64, y: 40 + 15 * i, h: 14, rx0: 50, rx1: 270 }));
         break;
       }
@@ -193,7 +192,7 @@ export class Menu {
           this.slotList().forEach((slot, i) => {
             const y = SLOT_Y + SLOT_H * i;
             this.slotBorder(f, SLOT_X, y + 7);          // 원작처럼 테두리는 글자보다 7 아래에 그린다
-            hud.text(f, names[slot] ?? 'EMPTY SLOT', SLOT_X, y);
+            hud.text(f, names[slot] ?? t('menu.emptySlot'), SLOT_X, y);
           });
         };
         this.slotList().forEach((slot, i) => I.push({
@@ -209,8 +208,8 @@ export class Menu {
           this.dim(f, 20, 56, 300, 150);
           lines.forEach((line, i) => hud.text(f, line, 160 - hud.textWidth(line) / 2, 66 + 11 * i));
         };
-        I.push({ id: 'yes', text: 'YES', x: 118, y: 124, h: 14, rx0: 96, rx1: 156, skullX: 94, act: () => { this.actions.play('PISTOL'); this.confirm.yes(); } });
-        I.push({ id: 'no', text: 'NO', x: 196, y: 124, h: 14, rx0: 176, rx1: 236, skullX: 172, act: () => this.back() });
+        I.push({ id: 'yes', text: t('menu.yes'), x: 118, y: 124, h: 14, rx0: 96, rx1: 156, skullX: 94, act: () => { this.actions.play('PISTOL'); this.confirm.yes(); } });
+        I.push({ id: 'no', text: t('menu.no'), x: 196, y: 124, h: 14, rx0: 176, rx1: 236, skullX: 172, act: () => this.back() });
         break;
       }
       default: break;
@@ -305,7 +304,7 @@ export class Menu {
     if (!this.actions.hasGame() || this.state === 'title') h.blit(frame, p('TITLEPIC'), 0, 0);
 
     if (this.state === 'title') {
-      const msg = 'PRESS ANY KEY';
+      const msg = t('menu.pressAnyKey');
       if (Math.floor(time / 500) % 2 === 0) h.text(frame, msg, 160 - h.textWidth(msg) / 2, 184);
       return;
     }
@@ -322,7 +321,7 @@ export class Menu {
     });
     if (L.back) {
       this.dim(frame, 2, 3, BACK_W - 4, BACK_H - 3);
-      h.text(frame, '< BACK', 7, 7);
+      h.text(frame, t('menu.back'), 7, 7);
     }
   }
 

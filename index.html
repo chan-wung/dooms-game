@@ -72,6 +72,7 @@
                    gap: 6px; background: rgba(0,0,0,.85); color: #ddd; font-size: clamp(13px, 2.6vw, 20px); text-align: center; padding: 16px; }
   #touch .t-help b { color: var(--accent); font-weight: 400; font-size: 18px; margin-bottom: 4px; }
   #touch .t-help span { color: #ffd23c; }
+  #touch .t-help-text { display: flex; flex-direction: column; align-items: center; gap: 6px; }
   #touch .t-opts { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
   #touch .t-opt { padding: 10px 16px; font: inherit; color: #fff; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.5); border-radius: 8px; }
   #touch .t-opt.on, #touch .t-mute.on { background: var(--accent); }
@@ -92,29 +93,30 @@
   <h1>doom-js</h1>
   <div id="wadList" hidden></div>
   <div id="drop">
-    <p>public/wad/DOOM1.WAD 를 찾지 못하면 여기에 WAD 파일(DOOM1 · DOOM · DOOM2.WAD)을 드롭하거나 선택하세요</p>
+    <p data-i18n="ui.drop">public/wad/DOOM1.WAD 를 찾지 못하면 여기에 WAD 파일(DOOM1 · DOOM · DOOM2.WAD)을 드롭하거나 선택하세요</p>
     <input type="file" id="file" accept=".wad,.WAD">
   </div>
-  <div id="status">로딩 중…</div>
+  <div id="status" data-i18n="ui.loading">로딩 중…</div>
   <div id="bar" hidden>
-    <label>맵 <select id="mapSel"></select></label>
+    <label><span data-i18n="ui.map">맵</span> <select id="mapSel"></select></label>
     <button id="btnMode">오토맵 (Tab)</button>
-    <button id="btnFull">전체화면</button>
-    <button id="btnWad">WAD 바꾸기</button>
-    <label><input type="checkbox" id="optSfx"> 효과음</label>
-    <label><input type="checkbox" id="optMusic"> 음악</label>
+    <button id="btnFull" data-i18n="ui.fullscreen">전체화면</button>
+    <button id="btnWad" data-i18n="ui.changeWad">WAD 바꾸기</button>
+    <label><input type="checkbox" id="optSfx"> <span data-i18n="ui.sfx">효과음</span></label>
+    <label><input type="checkbox" id="optMusic"> <span data-i18n="ui.music">음악</span></label>
     <span id="mapOpts" hidden>
-      <label><input type="checkbox" id="optFollow" checked> 따라가기 (F)</label>
-      <label><input type="checkbox" id="optFlat"> 전체 보기 (디버그)</label>
+      <label><input type="checkbox" id="optFollow" checked> <span data-i18n="ui.follow">따라가기 (F)</span></label>
+      <label><input type="checkbox" id="optFlat"> <span data-i18n="ui.flat">전체 보기 (디버그)</span></label>
       <label><input type="checkbox" id="optThings"> Things (T)</label>
-      <button id="btnFit">전체 보기 (0)</button>
+      <button id="btnFit" data-i18n="ui.fit">전체 보기 (0)</button>
     </span>
+    <label>🌐 <select id="langSel"><option value="ko">한국어</option><option value="en">English</option></select></label>
   </div>
   <div id="rotate">
     <div class="rot-icon">&#8635;</div>
-    <p>화면을 가로로 돌려 주세요</p>
-    <button id="btnLandscape">전체화면 · 가로로 고정</button>
-    <small>돌아가지 않으면 폰의 '자동 회전'을 켜 주세요</small>
+    <p data-i18n="ui.rotate">화면을 가로로 돌려 주세요</p>
+    <button id="btnLandscape" data-i18n="ui.rotateBtn">전체화면 · 가로로 고정</button>
+    <small data-i18n="ui.rotateHint">돌아가지 않으면 폰의 '자동 회전'을 켜 주세요</small>
   </div>
   <div id="stage" hidden>
     <canvas id="view"></canvas>
@@ -123,7 +125,7 @@
     <div id="overlay" hidden></div>
     <div id="hud"></div>
   </div>
-  <p class="help" id="help" hidden>
+  <p class="help" id="help" data-i18n-html="ui.help" hidden>
     <b>WASD</b> 이동 · <b>Shift</b> 달리기 · <b>←/→</b> 회전 · <b>E/Space</b> 사용(문·스위치) · <b>Ctrl/F/마우스 왼쪽</b> 발사 · <b>1~5</b> 무기(휠 순환) · <b>클릭</b> 마우스 시점 · <b>Esc</b> 메뉴(일시정지) · <b>Tab</b> 오토맵 · <b>R</b> 재시작 ·
     디버그: <b>N</b> noclip · <b>K</b> 열쇠 전부 ·
     오토맵: <b>휠</b> 줌 · <b>드래그</b> 팬 · <b>F</b> 따라가기 · <b>T</b> Things · <b>0</b> 전체 보기

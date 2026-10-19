@@ -1,4 +1,5 @@
 import { POWER_TICS } from './items.js';
+import { t } from '../app/i18n.js';
 
 /**
  * 치트 (원작 st_stuff.c). 키보드로 치는 코드와 옵션 메뉴의 CHEATS 가 같은 함수를 부른다.
@@ -22,14 +23,14 @@ export function toggleGod(game) {
   if (p.dead) return;
   p.god = !p.god;
   if (p.god) p.health = Math.max(p.health, 100);
-  game.say(p.god ? 'Degreelessness Mode On' : 'Degreelessness Mode Off', true);
+  game.say(t(p.god ? 'cheat.godOn' : 'cheat.godOff'), true);
 }
 
 /** IDCLIP */
 export function toggleNoclip(game) {
   const p = game.player;
   p.noclip = !p.noclip;
-  game.say(p.noclip ? 'No Clipping Mode ON' : 'No Clipping Mode OFF', true);
+  game.say(t(p.noclip ? 'cheat.noclipOn' : 'cheat.noclipOff'), true);
 }
 
 /** IDKFA: 무기·탄약·열쇠·파란 방어구 */
@@ -38,7 +39,7 @@ export function giveKfa(game) {
   if (p.dead) return;
   fullWeapons(game, p); fullAmmo(p); blueArmor(p);
   Object.assign(p.keys, { blue: true, yellow: true, red: true });
-  game.say('Very Happy Ammo Added', true);
+  game.say(t('cheat.kfa'), true);
 }
 
 /** IDFA: 무기·탄약·방어구 (열쇠 없음) */
@@ -46,7 +47,7 @@ export function giveFa(game) {
   const p = game.player;
   if (p.dead) return;
   fullWeapons(game, p); fullAmmo(p); blueArmor(p);
-  game.say('Ammo (no keys) Added', true);
+  game.say(t('cheat.fa'), true);
 }
 
 export const POWER_IDS = ['invuln', 'berserk', 'invis', 'radsuit', 'automap', 'lightamp'];
@@ -62,7 +63,7 @@ export function togglePower(game, id) {
   } else if (id in POWER_TICS) {
     p.powers[id] = p.powers[id] > 0 ? 0 : POWER_TICS[id];
   }
-  game.say('Power-up Toggled', true);
+  game.say(t('cheat.power'), true);
 }
 
 /** IDCHOPPERS */

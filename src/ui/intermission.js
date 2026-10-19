@@ -7,6 +7,7 @@
  * 모두 320×200 화면 버퍼에 그린다. tick() 은 35Hz.
  */
 import { SCREEN_W as W } from '../render/renderer.js';
+import { t } from '../app/i18n.js';
 
 const TICRATE = 35;
 const SHOW_NEXT_DELAY = 4 * TICRATE;      // 다음 맵 화면을 보여주는 시간
@@ -245,170 +246,25 @@ export class Intermission {
 
 // ---------- 에피소드 엔딩 (원작 f_finale.c) ----------
 const TEXT_SPEED = 3, TEXT_WAIT = 250;
-const E1_TEXT = [
-  'Once you beat the big badasses and',
-  'clean out the moon base you\'re supposed',
-  'to win, aren\'t you? Aren\'t you? Where\'s',
-  'your fat reward and ticket home? What',
-  'the hell is this? It\'s not supposed to',
-  'end this way!',
-  '',
-  'It stinks like rotten meat, but looks',
-  'like the lost Deimos base.  Looks like',
-  'you\'re stuck on The Shores of Hell.',
-  'The only way out is through.',
-  '',
-  'To continue the DOOM experience, play',
-  'The Shores of Hell and its amazing',
-  'sequel, Inferno!',
-];
-const E2_TEXT = [
-  'You\'ve done it! The hideous cyber-',
-  'demon lord that ruled the lost Deimos',
-  'moon base has been slain and you',
-  'are triumphant! But ... where are',
-  'you? You clamber to the edge of the',
-  'moon and look down to see the awful',
-  'truth.',
-  '',
-  'Deimos floats above Hell itself!',
-  'You\'ve never heard of anyone escaping',
-  'from Hell, but you\'ll make the bastards',
-  'sorry they ever heard of you! Quickly,',
-  'you rappel down to  the surface of',
-  'Hell.',
-  '',
-  'Now, it\'s on to the final chapter of',
-  'DOOM! -- Inferno.',
-];
-const E3_TEXT = [
-  'The loathsome spiderdemon that',
-  'masterminded the invasion of the moon',
-  'bases and caused so much death has had',
-  'its ass kicked for all time.',
-  '',
-  'A hidden doorway opens and you enter.',
-  'You\'ve proven too tough for Hell to',
-  'contain, and now Hell at last plays',
-  'fair -- for you emerge from the door',
-  'to see the green fields of Earth!',
-  'Home at last.',
-  '',
-  'You wonder what\'s been happening on',
-  'Earth while you were battling evil',
-  'unleashed. It\'s good that no Hell-',
-  'spawn could have come through that',
-  'door with you ...',
-];
-const E4_TEXT = [
-  'the spider mastermind must have sent forth',
-  'its legions of hellspawn before your',
-  'final confrontation with that terrible',
-  'beast from hell.  but you stepped forward',
-  'and brought forth eternal damnation and',
-  'suffering upon the horde as a true hero',
-  'would in the face of something so evil.',
-  '',
-  'besides, someone was gonna pay for what',
-  'happened to daisy, your pet rabbit.',
-  '',
-  'but now, you see spread before you more',
-  'potential pain and gibbitude as a nation',
-  'of demons run amok among our cities.',
-  '',
-  'next stop, hell on earth!',
-];
-/** 에피소드별 글자 · 바닥 무늬 · 글 다음 그림 (E3 은 그림 대신 토끼 스크롤) */
+/** 에피소드별 글 키 · 바닥 무늬 · 글 다음 그림 (E3 은 그림 대신 토끼 스크롤) */
 const ENDINGS = [
-  { text: E1_TEXT, flat: 'FLOOR4_8', pics: ['HELP2', 'CREDIT'] },   // 셰어웨어·정식판 = HELP2, 얼티밋 = CREDIT
-  { text: E2_TEXT, flat: 'SFLR6_1', pics: ['VICTORY2'] },
-  { text: E3_TEXT, flat: 'MFLR8_4', bunny: true },
-  { text: E4_TEXT, flat: 'MFLR8_3', pics: ['ENDPIC'] },
+  { text: 'finale.e1', flat: 'FLOOR4_8', pics: ['HELP2', 'CREDIT'] },   // 셰어웨어·정식판 = HELP2, 얼티밋 = CREDIT
+  { text: 'finale.e2', flat: 'SFLR6_1', pics: ['VICTORY2'] },
+  { text: 'finale.e3', flat: 'MFLR8_4', bunny: true },
+  { text: 'finale.e4', flat: 'MFLR8_3', pics: ['ENDPIC'] },
 ];
 // ---------- 둠2 이야기 화면 (원작 C1TEXT~C6TEXT) ----------
 const DOOM2_STORIES = {
-  C1: { flat: 'SLIME16', text: [
-    'YOU HAVE ENTERED DEEPLY INTO THE INFESTED',
-    'STARPORT. BUT SOMETHING IS WRONG. THE',
-    'MONSTERS HAVE BROUGHT THEIR OWN REALITY',
-    'WITH THEM, AND THE STARPORT\'S TECHNOLOGY',
-    'IS BEING SUBVERTED BY THEIR PRESENCE.',
-    '',
-    'AHEAD, YOU SEE AN OUTPOST OF HELL, A',
-    'FORTIFIED ZONE. IF YOU CAN GET PAST IT,',
-    'YOU CAN PENETRATE INTO THE HAUNTED HEART',
-    'OF THE STARBASE AND FIND THE CONTROLLING',
-    'SWITCH WHICH HOLDS EARTH\'S POPULATION',
-    'HOSTAGE.',
-  ] },
-  C2: { flat: 'RROCK14', text: [
-    'YOU HAVE WON! YOUR VICTORY HAS ENABLED',
-    'HUMANKIND TO EVACUATE EARTH AND ESCAPE',
-    'THE NIGHTMARE.  NOW YOU ARE THE ONLY',
-    'HUMAN LEFT ON THE FACE OF THE PLANET.',
-    'CANNIBAL MUTATIONS, CARNIVOROUS ALIENS,',
-    'AND EVIL SPIRITS ARE YOUR ONLY NEIGHBORS.',
-    'YOU SIT BACK AND WAIT FOR DEATH, CONTENT',
-    'THAT YOU HAVE SAVED YOUR SPECIES.',
-    '',
-    'BUT THEN, EARTH CONTROL BEAMS DOWN A',
-    'MESSAGE FROM SPACE: "SENSORS HAVE LOCATED',
-    'THE SOURCE OF THE ALIEN INVASION. IF YOU',
-    'GO THERE, YOU MAY BE ABLE TO BLOCK THEIR',
-    'ENTRY.  THE ALIEN BASE IS IN THE HEART OF',
-    'YOUR OWN HOME CITY, NOT FAR FROM THE',
-    'STARPORT." SLOWLY AND PAINFULLY YOU GET',
-    'UP AND RETURN TO THE FRAY.',
-  ] },
-  C3: { flat: 'RROCK07', text: [
-    'YOU ARE AT THE CORRUPT HEART OF THE CITY,',
-    'SURROUNDED BY THE CORPSES OF YOUR ENEMIES.',
-    'YOU SEE NO WAY TO DESTROY THE CREATURES\'',
-    'ENTRYWAY ON THIS SIDE, SO YOU CLENCH YOUR',
-    'TEETH AND PLUNGE THROUGH IT.',
-    '',
-    'THERE MUST BE A WAY TO CLOSE IT ON THE',
-    'OTHER SIDE. WHAT DO YOU CARE IF YOU\'VE',
-    'GOT TO GO THROUGH HELL TO GET TO IT?',
-  ] },
-  C4: { flat: 'RROCK17', cast: true, text: [
-    'THE HORRENDOUS VISAGE OF THE BIGGEST',
-    'DEMON YOU\'VE EVER SEEN CRUMBLES BEFORE',
-    'YOU, AFTER YOU PUMP YOUR ROCKETS INTO',
-    'HIS EXPOSED BRAIN. THE MONSTER SHRIVELS',
-    'UP AND DIES, ITS THRASHING LIMBS',
-    'DEVASTATING UNTOLD MILES OF HELL\'S',
-    'SURFACE.',
-    '',
-    'YOU\'VE DONE IT. THE INVASION IS OVER.',
-    'EARTH IS SAVED. HELL IS A WRECK. YOU',
-    'WONDER WHERE BAD FOLKS WILL GO WHEN THEY',
-    'DIE, NOW. WIPING THE SWEAT FROM YOUR',
-    'FOREHEAD YOU BEGIN THE LONG TREK BACK',
-    'HOME. REBUILDING EARTH OUGHT TO BE A',
-    'LOT MORE FUN THAN RUINING IT WAS.',
-  ] },
-  C5: { flat: 'RROCK13', text: [
-    'CONGRATULATIONS, YOU\'VE FOUND THE SECRET',
-    'LEVEL! LOOKS LIKE IT\'S BEEN BUILT BY',
-    'HUMANS, RATHER THAN DEMONS. YOU WONDER',
-    'WHO THE INMATES OF THIS CORNER OF HELL',
-    'WILL BE.',
-  ] },
-  C6: { flat: 'RROCK19', text: [
-    'CONGRATULATIONS, YOU\'VE FOUND THE',
-    'SUPER SECRET LEVEL!  YOU\'D BETTER',
-    'BLAZE THROUGH THIS ONE!',
-  ] },
+  C1: { flat: 'SLIME16', text: 'story.C1' },
+  C2: { flat: 'RROCK14', text: 'story.C2' },
+  C3: { flat: 'RROCK07', text: 'story.C3' },
+  C4: { flat: 'RROCK17', cast: true, text: 'story.C4' },
+  C5: { flat: 'RROCK13', text: 'story.C5' },
+  C6: { flat: 'RROCK19', text: 'story.C6' },
 };
 
 // ---------- 둠2 출연진 소개 (원작 F_StartCast): 몬스터가 하나씩 걷고 공격하고, 키를 누르면 쓰러진다 ----------
-const CAST = [
-  ['POSS', 'ZOMBIEMAN'], ['SPOS', 'SHOTGUN GUY'], ['CPOS', 'HEAVY WEAPON DUDE'], ['TROO', 'IMP'], ['SARG', 'DEMON'],
-  ['SKUL', 'LOST SOUL'], ['HEAD', 'CACODEMON'], ['BOS2', 'HELL KNIGHT'], ['BOSS', 'BARON OF HELL'], ['BSPI', 'ARACHNOTRON'],
-  ['PAIN', 'PAIN ELEMENTAL'], ['SKEL', 'REVENANT'], ['FATT', 'MANCUBUS'], ['VILE', 'ARCH-VILE'], ['SPID', 'THE SPIDER MASTERMIND'],
-  ['CYBR', 'THE CYBERDEMON'], ['PLAY', 'OUR HERO'],
-];
+const CAST = ['POSS', 'SPOS', 'CPOS', 'TROO', 'SARG', 'SKUL', 'HEAD', 'BOS2', 'BOSS', 'BSPI', 'PAIN', 'SKEL', 'FATT', 'VILE', 'SPID', 'CYBR', 'PLAY'];   // 이름은 t('cast.<스프라이트>')
 const S = (f, t) => ({ f, t });
 const PLAYER_CAST = {   // 플레이어는 상태 표가 states.js 에 없어 여기 둔다
   states: {
@@ -422,6 +278,7 @@ const PLAYER_CAST = {   // 플레이어는 상태 표가 states.js 에 없어 �
 // 토끼 스크롤 (원작 F_BunnyScroll): 230 tic 뒤부터 PFUB2 → PFUB1 로 2 tic 에 1픽셀, 1130 tic 에 "THE END" 가 한 글자씩
 const BUNNY_SCROLL_AT = 230, BUNNY_END_AT = 1130, BUNNY_LETTERS_AT = 1180;
 const textLength = (lines) => lines.join('\n').length;
+const endText = (end) => t(end.text);
 
 export class Finale {
   /**
@@ -447,7 +304,7 @@ export class Finale {
   }
 
   begin() {
-    this.typed = textLength(this.end.text) * TEXT_SPEED + 10;
+    this.typed = textLength(endText(this.end)) * TEXT_SPEED + 10;
     this.count = 0; this.stage = 0; this.done = false; this.endLetters = -1;
   }
 
@@ -478,7 +335,7 @@ export class Finale {
   }
 
   castSetup() {
-    const [sprite, name] = CAST[this.castNum];
+    const sprite = CAST[this.castNum], name = t(`cast.${sprite}`);
     this.cast = { sprite, name, info: sprite === 'PLAY' ? PLAYER_CAST : this.castInfo(sprite) };
     this.castDeath = false; this.castFrames = 0; this.castAttacking = false;
     this.castSet('run', 0);
@@ -533,7 +390,7 @@ export class Finale {
     }
     h.drawFlat(frame, this.end.flat);
     let left = Math.max(0, Math.floor((this.count - 10) / TEXT_SPEED));
-    this.end.text.forEach((line, i) => {
+    endText(this.end).forEach((line, i) => {
       if (left <= 0) return;
       h.text(frame, line.slice(0, left), 10, 10 + 11 * i);
       left -= line.length + 1;

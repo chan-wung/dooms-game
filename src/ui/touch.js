@@ -1,3 +1,4 @@
+import { t, getLang } from '../app/i18n.js';
 /**
  * 모바일 터치 조작: 왼쪽 가상 조이스틱(이동/좌우 걷기), 오른쪽 화면 드래그(시점 회전),
  * 발사·사용·무기 교체·오토맵·메뉴 버튼. 터치 기기이거나 주소에 ?touch=1 이 있을 때만 켠다.
@@ -48,18 +49,13 @@ export class TouchControls {
       <button class="t-small t-follow">FOLLOW</button>
       <button class="t-small t-fit">FIT</button>
       <div class="t-help" hidden>
-        <b>조작 방법</b>
-        <p><span>왼쪽 스틱</span> 걷기 · 바깥 점선까지 끌어내면 달리기</p>
-        <p><span>오른쪽 스틱 · 화면 드래그</span> 둘러보기</p>
-        <p><span>FIRE</span> 발사 &nbsp; <span>USE</span> 문·스위치</p>
-        <p><span>1~7</span> 무기 선택</p>
-        <p><span>MAP</span> 오토맵 (두 손가락으로 확대·축소, 한 손가락으로 이동)</p>
-        <p><span>MENU</span> 저장·불러오기·옵션</p>
+        <div class="t-help-text"></div>
         <div class="t-opts">
           <button class="t-opt" data-opt="muted"></button>
           <button class="t-opt" data-opt="autoLandscape"></button>
+          <button class="t-opt" data-opt="lang"></button>
         </div>
-        <em>화면을 탭하면 시작합니다</em>
+        <em class="t-start"></em>
       </div>`;
     root.appendChild(el);
     this.el = el;
@@ -85,26 +81,43 @@ export class TouchControls {
 
     // 첫 안내 창의 옵션 토글 (누르면 창이 닫히지 않는다) + 상단 소리 버튼
     const LABELS = {
-      muted: ['소리 끄기', (on) => (on ? '켬 (무음)' : '끔')],
-      autoLandscape: ['시작할 때 전체화면 · 가로 고정', (on) => (on ? '켬' : '끔')],
+      muted: ['touch.muted', (on) => t(on ? 'touch.mutedOn' : 'touch.off')],
+      autoLandscape: ['touch.autoLandscape', (on) => t(on ? 'touch.on' : 'touch.off')],
+      lang: ['touch.language', () => (getLang() === 'ko' ? '한국어' : 'English')],
     };
     const mute = el.querySelector('.t-mute');
     this.syncOpts = () => {
       const o = handlers.getOpts();
       el.querySelectorAll('.t-opt').forEach((b) => {
         const [name, state] = LABELS[b.dataset.opt];
-        b.textContent = `${name} : ${state(o[b.dataset.opt])}`;
+        b.textContent = `${t(name)} : ${state(o[b.dataset.opt])}`;
         b.classList.toggle('on', o[b.dataset.opt]);
       });
       mute.textContent = o.muted ? 'MUTED' : 'SOUND';
       mute.classList.toggle('on', o.muted);
     };
-    const toggleOpt = (key) => { handlers.setOpt(key, !handlers.getOpts()[key]); this.syncOpts(); };
+    const toggleOpt = (key) => {
+      if (key === 'lang') handlers.toggleLang(); else handlers.setOpt(key, !handlers.getOpts()[key]);
+      this.relabel();
+    };
     el.querySelectorAll('.t-opt').forEach((b) => {
       b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); toggleOpt(b.dataset.opt); });
     });
     this.bindHold(mute, (on) => { if (on) toggleOpt('muted'); });
-    this.syncOpts();
+    // 안내 창 글 (언어를 바꾸면 relabel 이 다시 채운다)
+    this.relabel = () => {
+      el.querySelector('.t-help-text').innerHTML = `
+        <b>${t('touch.helpTitle')}</b>
+        <p><span>${t('touch.helpMove')}</span> ${t('touch.helpMoveText')}</p>
+        <p><span>${t('touch.helpLook')}</span> ${t('touch.helpLookText')}</p>
+        <p><span>FIRE</span> ${t('touch.helpFire')} &nbsp; <span>USE</span> ${t('touch.helpUse')}</p>
+        <p><span>1~7</span> ${t('touch.helpWeapons')}</p>
+        <p><span>MAP</span> ${t('touch.helpMapText')}</p>
+        <p><span>MENU</span> ${t('touch.helpMenuText')}</p>`;
+      el.querySelector('.t-start').textContent = t('touch.start');
+      this.syncOpts();
+    };
+    this.relabel();
   }
 
   /** 오토맵을 보는 동안: 조작 버튼을 숨기고 화면 제스처(확대·이동)를 캔버스로 넘긴다 */

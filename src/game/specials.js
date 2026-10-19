@@ -1,4 +1,5 @@
 import { sectorAt } from '../render/bsp.js';
+import { t } from '../app/i18n.js';
 import { LINE_FLAGS } from '../wad/level.js';
 import { Physics } from './physics.js';
 import { damageMobj } from './combat.js';
@@ -467,7 +468,7 @@ export class Specials {
       case 7: if (!suit) hit(5); break;
       case 4: case 16: if (!suit || g.rnd() % 256 < 5) hit(20); break;
       case 9:
-        g.secretsFound++; sec.special = 0; g.say('A secret is revealed!');
+        g.secretsFound++; sec.special = 0; g.say(t('game.secret'));
         break;
       case 11:
         hit(20);
@@ -559,7 +560,7 @@ export class Specials {
     const g = this.game, p = g.player;
     const monster = by && by !== p;   // 몬스터는 열쇠 없는 일반 문만 열고, 닫지는 않는다
     const key = KEY_DOORS[ld.special];
-    if (key && (monster || !p.keys[key])) { if (!monster) { g.say(`You need a ${key} key to open this door.`); g.playSound('OOF'); } return; }
+    if (key && (monster || !p.keys[key])) { if (!monster) { g.say(t('game.needKeyDoor', { key: t(`key.${key}`) })); g.playSound('OOF'); } return; }
 
     const sec = ld.backSector;
     if (!sec) return;
@@ -596,7 +597,7 @@ export class Specials {
   /** 열쇠 고속문 스위치 (99, 133~137): 열쇠가 없으면 메시지만 */
   lockedDoor(ld, key) {
     const g = this.game;
-    if (!g.player.keys[key]) { g.say(`You need a ${key} key to activate this object`); g.playSound('OOF'); return false; }
+    if (!g.player.keys[key]) { g.say(t('game.needKeyObject', { key: t(`key.${key}`) })); g.playSound('OOF'); return false; }
     return this.doDoor(ld, 'blazeOpen');
   }
 

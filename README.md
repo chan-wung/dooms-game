@@ -29,6 +29,10 @@ npm test             # 게임 로직/전투/저장/규칙/렌더 테스트 (publ
 
 `public/wad/DOOM.WAD`, `public/wad/DOOM2.WAD` 도 있으면 정식판(`tests/registered.mjs`)·둠2(`tests/doom2.mjs`) 테스트까지 돈다. 없으면 그 둘은 건너뛴다.
 
+## 언어
+
+기본 언어는 한국어이고, 화면 위쪽의 언어 선택(🌐)에서 English 로 바꿀 수 있다(모바일은 첫 안내 창의 **언어** 버튼). 선택은 브라우저에 기억된다. 문구는 `src/app/lang/ko.js`·`en.js` 에 모여 있고 `t('키')` 로 쓴다. 게임 화면 안의 한글은 갈무리 9 픽셀 글꼴(`public/fonts`, OFL)로 그린다. 메뉴의 그림 글자(NEW GAME 등)와 점수 화면의 맵 이름은 WAD 안의 그림이라 번역하지 않는다.
+
 ## 조작
 
 | 입력 | 동작 |

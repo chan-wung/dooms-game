@@ -1,4 +1,5 @@
 import { sectorAt } from '../render/bsp.js';
+import { t } from '../app/i18n.js';
 import { HEIGHT, GRAVITY, MAXMOVE, STOPSPEED, FRICTION } from './physics.js';
 import { splitMove, normAngle } from './util.js';
 import { newAmmo, newMaxAmmo } from './items.js';
@@ -112,7 +113,7 @@ export class Player {
     game.flashDamage = 6;
     if (this.health <= 0) {
       game.playSound(this.health < -50 ? 'PDIEHI' : 'PLDETH');
-      this.health = 0; this.dead = true; game.say('YOU DIED  —  R / E 키로 다시 시작', true);
+      this.health = 0; this.dead = true; game.say(t('game.died'), true);
     } else {
       game.playSound('PLPAIN');
     }
